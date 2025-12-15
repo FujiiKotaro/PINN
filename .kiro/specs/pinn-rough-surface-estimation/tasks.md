@@ -1,0 +1,55 @@
+# Implementation Plan
+
+- [ ] 1. プロジェクト構造とデータローダーのセットアップ (Project Structure and DataLoader Setup)
+  - [x] 1.1 (P) `DataLoader`クラスの基本的な骨格とテストを作成する。モック`.npz`ファイルからデータを読み込めることを確認する。 (Create the basic skeleton and tests for the `DataLoader` class. Confirm it can read data from a mock `.npz` file.)
+    - `DataLoader`クラスを`src/data.py`に作成する。
+    - `tests/test_data.py`に、モックデータを用いた`DataLoader`のユニットテストを作成する。
+    - _Requirements: 3.2_
+  - [x] 1.2 (P) `NonDimensionalizer`クラスの骨格とテストを作成する。既知の入力に対して正しい無次元化値を返すことを確認する。 (Create the skeleton and tests for the `NonDimensionalizer` class. Confirm it returns correct dimensionless values for known inputs.)
+    - `NonDimensionalizer`クラスを`src/data.py`に追加する。
+    - `tests/test_data.py`に、`NonDimensionalizer`のユニットテストを作成する。
+    - _Requirements: 2.2_
+  - [x] 1.3 `DataLoader`と`NonDimensionalizer`を統合し、`PINN_data`ディレクトリから実際の`.npz`ファイルを読み込み、無次元化されたデータセットを生成する機能を追加する。 (Integrate `DataLoader` and `NonDimensionalizer` to add functionality for reading a real `.npz` file from the `PINN_data` directory and generating a non-dimensionalized dataset.)
+    - `DataLoader`に、実際のデータをロードし、`NonDimensionalizer`を呼び出すメソッドを追加する。
+    - 統合後の動作を確認するテストを追加する。
+    - _Requirements: 2.2, 3.2_
+
+- [ ] 2. PINN順問題モデルの構築 (Build PINN Forward Problem Model)
+  - [x] 2.1 `PINNModelBuilder`クラスの骨格を作成し、2D空間と時間のジオメトリを定義する機能を追加する。 (Create the skeleton for the `PINNModelBuilder` class and add functionality to define the 2D space and time geometry.)
+    - `PINNModelBuilder`クラスを`src/pinn.py`に作成する。
+    - `dde.geometry.Rectangle`と`dde.geometry.TimeDomain`を使用して計算領域を定義する。
+    - _Requirements: 1.2_
+  - [x] 2.2 2D弾性波動方程式の残差を計算するカスタムPDE関数を実装する。 (Implement the custom PDE function that calculates the residual of the 2D elastic wave equation.)
+    - `PINNModelBuilder`内に、`dde.grad.jacobian`と`dde.grad.hessian`を使用して偏微分を計算する`pde_system`メソッドを実装する。
+    - PDEシステムは`Ux`と`Uy`の2つの結合された方程式を扱う。
+    - _Requirements: 1.1, 1.3, 2.1_
+  - [x] 2.3 境界条件を定義する。まず、応力ゼロの単純な境界条件（粗面なし）を実装する。 (Define the boundary conditions. First, implement simple stress-free boundary conditions (without the rough surface).)
+    - `PINNModelBuilder`内に、ドメインの端で応力がゼロになる単純な境界条件を定義するメソッドを追加する。
+    - _Requirements: 2.3_
+  - [x] 2.4 `PINN_FDTD3.py`の`isfree`ロジックを移植し、粗面境界を判定する関数を作成し、それを`dde.NeumannBC`または類似の条件として適用する。 (Port the `isfree` logic from `PINN_FDTD3.py` to create a function that identifies the rough surface boundary and apply it as a `dde.NeumannBC` or similar condition.)
+    - 粗面形状を判定する関数を`pinn.py`に実装する。
+    - この関数を使用して、粗面での応力ゼロ境界条件を`PINNModelBuilder`に追加する。
+    - _Requirements: 2.3_
+
+- [ ] 3. PINN逆問題モデルの構築と学習 (Build and Train PINN Inverse Problem Model)
+  - [x] 3.1 `InverseProblemSolver`クラスを作成し、`pitch`と`depth`を`dde.Variable`として定義する機能を追加する。 (Create the `InverseProblemSolver` class and add functionality to define `pitch` and `depth` as `dde.Variable`.)
+    - `InverseProblemSolver`クラスを`src/pinn.py`に作成する。
+    - _Requirements: 1.5_
+  - [x] 3.2 観測データ（反射波形）を`dde.PointSetBC`として定義する機能を追加する。 (Add functionality to define the observation data (reflection waveform) as a `dde.PointSetBC`.)
+    - `InverseProblemSolver`に、`DataLoader`から受け取った反射波形データを用いて`PointSetBC`を作成するメソッドを追加する。
+    - _Requirements: 1.4_
+  - [x] 3.3 `Trainer`クラスを作成し、`dde.Model`を定義し、Adamオプティマイザと`external_trainable_variables`を設定してコンパイルする機能を追加する。 (Create the `Trainer` class and add functionality to define the `dde.Model`, configure it with the Adam optimizer, and compile it with `external_trainable_variables`.)
+    - `Trainer`クラスを`src/training.py`に作成する。
+    - _Requirements: 3.1_
+  - [x] 3.4 トレーニングを実行し、損失と`dde.Variable`の値を監視するコールバックを設定する機能を追加する。 (Add functionality to run the training and set up callbacks to monitor the loss and the values of the `dde.Variable`s.)
+    - `Trainer`にトレーニングループを実行するメソッドを追加する。
+    - `dde.callbacks.VariableValue`を使用して、`pitch`と`depth`の学習過程を記録する。
+    - _Requirements: 1.4, 1.5_
+
+- [x] 4. 統合と評価 (Integration and Evaluation)
+  - [x] 4.1 すべてのコンポーネントを統合する`main.py`スクリプトを作成する。 (Create a `main.py` script that integrates all components.)
+    - `main.py`で、`DataLoader`, `PINNModelBuilder`, `InverseProblemSolver`, `Trainer`を順に呼び出し、パイプライン全体を実行する。
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2_
+  - [x] 4.2 `ResultsAnalyzer`クラスを作成し、学習後のモデルを受け取り、推定されたパラメータと真の値を比較してr2スコアを計算する機能を追加する。 (Create a `ResultsAnalyzer` class that takes the trained model, compares the estimated parameters with the ground truth, and calculates the r2 score.)
+    - `ResultsAnalyzer`を`src/evaluation.py`に作成する。
+    - _Requirements: 1.6_
