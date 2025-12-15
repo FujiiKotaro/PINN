@@ -1,0 +1,16 @@
+poetry.lock
+poetry.lock:Zone.Identifier
+pyproject.toml
+pyproject.toml:Zone.Identifier
+PINN_data/p1250_d100.npz
+PINN_data/p1250_d200.npz
+PINN_data/p1250_d300.npz
+PINN_data/p1500_d100.npz
+PINN_data/p1500_d200.npz
+PINN_data/p1500_d300.npz
+PINN_data/p1750_d100.npz
+PINN_data/p1750_d200.npz
+PINN_data/p1750_d300.npz
+PINN_data/p2000_d100.npz
+PINN_data/p2000_d200.npz
+PINN_data/p2000_d300.npz
