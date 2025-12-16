@@ -1,9 +1,10 @@
 """Training Pipeline Service for GPU-accelerated PINN training."""
 
-import torch
-import numpy as np
 from pathlib import Path
-from typing import Optional, Any, List
+from typing import Any
+
+import numpy as np
+import torch
 
 
 class TrainingPipelineService:
@@ -18,7 +19,7 @@ class TrainingPipelineService:
         model: Any,
         config: Any,
         output_dir: Path,
-        callbacks: Optional[List[Any]] = None
+        callbacks: list[Any] | None = None
     ) -> tuple[Any, dict[str, list[float]]]:
         """Execute PINN training with monitoring.
 
@@ -69,9 +70,9 @@ class TrainingPipelineService:
 
     def register_callbacks(
         self,
-        callbacks: List[Any],
+        callbacks: list[Any],
         model: Any
-    ) -> List[Any]:
+    ) -> list[Any]:
         """Register callbacks with model.
 
         Args:

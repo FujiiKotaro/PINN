@@ -1,0 +1,10 @@
+{
+  "python_version": "3.12.3",
+  "torch_version": "2.4.0+cu124",
+  "deepxde_version": "1.15.0",
+  "numpy_version": "1.26.4",
+  "seed": 42,
+  "experiment_name": "test_quick_train",
+  "timestamp": "2025-12-16T01:02:40.022817Z",
+  "config_hash": "7d288c25ecdfa362cec8b520ed6b33dd33249a70ac7350cfc0df673082637a93"
+}

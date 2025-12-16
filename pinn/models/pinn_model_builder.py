@@ -5,12 +5,13 @@ DeepXDE PINN models by combining geometry, PDE, boundary conditions, and
 neural network architecture.
 """
 
-from typing import Callable
+from collections.abc import Callable
+
 import deepxde as dde
 
-from pinn.utils.config_loader import ExperimentConfig, DomainConfig, NetworkConfig
-from pinn.models.pde_definition import PDEDefinitionService
 from pinn.models.boundary_conditions import BoundaryConditionsService
+from pinn.models.pde_definition import PDEDefinitionService
+from pinn.utils.config_loader import DomainConfig, ExperimentConfig, NetworkConfig
 
 
 class PINNModelBuilderService:
@@ -113,13 +114,18 @@ class PINNModelBuilderService:
         constraints = [bc, ic_displacement, ic_velocity]
 
         # Create TimePDE data object
+        # For Neumann BC, increase collocation points for better convergence
+        num_domain = 5000 if config.boundary_conditions.type == "neumann" else 2540
+        num_boundary = 160 if config.boundary_conditions.type == "neumann" else 80
+        num_initial = 320 if config.boundary_conditions.type == "neumann" else 160
+
         data = dde.data.TimePDE(
             geomtime,
             pde_func,
             constraints,
-            num_domain=2540,     # Number of collocation points in domain
-            num_boundary=80,     # Number of points on boundary
-            num_initial=160      # Number of points at t=0
+            num_domain=num_domain,     # Number of collocation points in domain
+            num_boundary=num_boundary,  # Number of points on boundary
+            num_initial=num_initial     # Number of points at t=0
         )
 
         # Create neural network
@@ -130,13 +136,19 @@ class PINNModelBuilderService:
 
         if compile_model:
             # Compile with optimizer and loss weights
+            # Order: [bc, ic_displacement, ic_velocity, pde]
+            bc_weight = config.training.loss_weights.get("bc", 1.0)
+            ic_weight = config.training.loss_weights.get("ic", 1.0)
+            pde_weight = config.training.loss_weights.get("pde", 1.0)
+
             model.compile(
                 config.training.optimizer,
                 lr=config.training.learning_rate,
                 loss_weights=[
-                    config.training.loss_weights.get("bc", 1.0),
-                    config.training.loss_weights.get("data", 1.0),
-                    config.training.loss_weights.get("pde", 1.0)
+                    bc_weight,          # Boundary condition
+                    ic_weight,          # Initial displacement
+                    ic_weight,          # Initial velocity
+                    pde_weight          # PDE residual
                 ]
             )
 

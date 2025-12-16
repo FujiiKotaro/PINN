@@ -4,10 +4,8 @@ This module tests the PDEDefinitionService for computing the wave equation
 PDE residual using automatic differentiation.
 """
 
-import pytest
-import torch
 import numpy as np
-import deepxde as dde
+import torch
 
 from pinn.models.pde_definition import PDEDefinitionService
 

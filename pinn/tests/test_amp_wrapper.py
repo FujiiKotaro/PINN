@@ -1,8 +1,10 @@
 """Unit tests for AMP Wrapper Service."""
 
+from unittest.mock import Mock, patch
+
 import pytest
 import torch
-from unittest.mock import Mock, patch, MagicMock
+
 from pinn.training.amp_wrapper import AMPWrapperService
 
 

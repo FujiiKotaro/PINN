@@ -4,8 +4,9 @@ This module tests that the required directory structure exists
 for the PINN 1D Foundation implementation.
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 class TestProjectStructure:

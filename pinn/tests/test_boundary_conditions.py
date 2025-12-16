@@ -4,10 +4,9 @@ This module tests the BoundaryConditionsService for creating DeepXDE
 boundary and initial condition objects.
 """
 
-import pytest
-import torch
-import numpy as np
 import deepxde as dde
+import numpy as np
+import pytest
 
 from pinn.models.boundary_conditions import BoundaryConditionsService
 

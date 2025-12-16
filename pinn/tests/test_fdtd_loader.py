@@ -3,10 +3,10 @@
 Tests cover .npz file loading, metadata extraction, and data validation.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
-import tempfile
 
 from pinn.data.fdtd_loader import FDTDData, FDTDDataLoaderService
 
@@ -139,6 +139,103 @@ class TestFDTDDataLoader:
         assert data.depth > 0
         assert data.width > 0
         assert isinstance(data.seed, (int, np.integer))
+
+    def test_load_multiple_no_filter(self, tmp_path):
+        """Test loading multiple .npz files without filtering."""
+        # Create multiple mock files
+        self._create_mock_files(tmp_path)
+
+        loader = FDTDDataLoaderService(data_dir=tmp_path)
+        data_list = loader.load_multiple()
+
+        # Should load all 3 files
+        assert len(data_list) == 3
+
+        # Check that data is sorted by filename
+        pitches = [d.pitch for d in data_list]
+        assert pitches == sorted(pitches)
+
+    def test_load_multiple_pitch_filter(self, tmp_path):
+        """Test loading multiple files with pitch range filter."""
+        self._create_mock_files(tmp_path)
+
+        loader = FDTDDataLoaderService(data_dir=tmp_path)
+        # Filter for pitch between 1.4mm and 1.6mm (only p1500 should match)
+        data_list = loader.load_multiple(pitch_range=(1.4e-3, 1.6e-3))
+
+        assert len(data_list) == 1
+        assert data_list[0].pitch == pytest.approx(1.5e-3)
+
+    def test_load_multiple_depth_filter(self, tmp_path):
+        """Test loading multiple files with depth range filter."""
+        self._create_mock_files(tmp_path)
+
+        loader = FDTDDataLoaderService(data_dir=tmp_path)
+        # Filter for depth between 0.15mm and 0.25mm (p1500 and p2000 have 0.2mm depth)
+        data_list = loader.load_multiple(depth_range=(0.15e-3, 0.25e-3))
+
+        assert len(data_list) == 2
+        depths = [d.depth for d in data_list]
+        assert all(pytest.approx(d) == 0.2e-3 for d in depths)
+
+    def test_load_multiple_combined_filter(self, tmp_path):
+        """Test loading with both pitch and depth filters."""
+        self._create_mock_files(tmp_path)
+
+        loader = FDTDDataLoaderService(data_dir=tmp_path)
+        # Filter for pitch 1.4-1.6mm AND depth 0.15-0.25mm (only p1500_d200)
+        data_list = loader.load_multiple(
+            pitch_range=(1.4e-3, 1.6e-3),
+            depth_range=(0.15e-3, 0.25e-3)
+        )
+
+        assert len(data_list) == 1
+        assert data_list[0].pitch == pytest.approx(1.5e-3)
+        assert data_list[0].depth == pytest.approx(0.2e-3)
+
+    def test_load_multiple_no_files_found(self, tmp_path):
+        """Test error when no .npz files found in directory."""
+        loader = FDTDDataLoaderService(data_dir=tmp_path)
+
+        with pytest.raises(ValueError, match="No .npz files found"):
+            loader.load_multiple()
+
+    def test_load_multiple_invalid_directory(self):
+        """Test error when data directory doesn't exist."""
+        loader = FDTDDataLoaderService(data_dir=Path("/nonexistent/path"))
+
+        with pytest.raises(ValueError, match="Data directory not found"):
+            loader.load_multiple()
+
+    def _create_mock_files(self, tmp_path):
+        """Helper to create multiple mock .npz files with different parameters."""
+        configs = [
+            ("p1250_d100.npz", 1.25e-3, 0.1e-3),
+            ("p1500_d200.npz", 1.5e-3, 0.2e-3),
+            ("p2000_d200.npz", 2.0e-3, 0.2e-3),
+        ]
+
+        for filename, pitch, depth in configs:
+            nx_sample, ny_sample, nt_sample = 10, 10, 5
+            total_size = nx_sample * ny_sample * nt_sample
+
+            np.savez(
+                tmp_path / filename,
+                x=np.linspace(0, 1, total_size),
+                y=np.linspace(0, 1, total_size),
+                t=np.linspace(0, 1, total_size),
+                T1=np.sin(np.linspace(0, 1, total_size)),
+                T3=np.cos(np.linspace(0, 1, total_size)),
+                Ux=np.sin(np.linspace(0, 1, total_size)),
+                Uy=np.cos(np.linspace(0, 1, total_size)),
+                p=pitch,
+                d=depth,
+                w=0.1e-3,
+                seed=42,
+                nx_sample=nx_sample,
+                ny_sample=ny_sample,
+                nt_sample=nt_sample,
+            )
 
 
 class TestFDTDData:

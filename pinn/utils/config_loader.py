@@ -5,7 +5,8 @@ and a ConfigLoaderService for loading/saving YAML configuration files.
 """
 
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
+
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
@@ -48,8 +49,8 @@ class BoundaryConditionConfig(BaseModel):
     """Configuration for boundary conditions."""
 
     type: Literal["dirichlet", "neumann", "periodic"]
-    left_value: Optional[float] = None  # For Dirichlet
-    right_value: Optional[float] = None
+    left_value: float | None = None  # For Dirichlet
+    right_value: float | None = None
 
 
 class NetworkConfig(BaseModel):
@@ -83,6 +84,15 @@ class TrainingConfig(BaseModel):
     checkpoint_interval: int = 100
 
 
+class AnalyticalSolutionConfig(BaseModel):
+    """Configuration for analytical solution type and parameters."""
+
+    solution_type: Literal["standing_wave", "standing_wave_neumann", "traveling_wave", "none"]
+    mode: int = Field(1, ge=0, description="Mode number (n) for wave solution")
+    initial_amplitude: float = Field(1.0, description="Amplitude of initial condition")
+    enable_validation: bool = Field(True, description="Enable validation against analytical solution")
+
+
 class ExperimentConfig(BaseModel):
     """Complete experiment configuration."""
 
@@ -92,6 +102,7 @@ class ExperimentConfig(BaseModel):
     boundary_conditions: BoundaryConditionConfig
     network: NetworkConfig
     training: TrainingConfig
+    analytical_solution: AnalyticalSolutionConfig | None = None
 
 
 class ConfigLoaderService:
@@ -118,7 +129,7 @@ class ConfigLoaderService:
                 f"Configuration file not found: {file_path}"
             )
 
-        with open(path, 'r') as f:
+        with open(path) as f:
             config_dict = yaml.safe_load(f)
 
         return ExperimentConfig(**config_dict)

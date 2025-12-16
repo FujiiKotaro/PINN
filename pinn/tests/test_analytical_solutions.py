@@ -8,7 +8,7 @@ Tests verify:
 """
 
 import numpy as np
-import pytest
+
 from pinn.validation.analytical_solutions import AnalyticalSolutionGeneratorService
 
 

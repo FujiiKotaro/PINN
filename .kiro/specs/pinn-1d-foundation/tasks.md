@@ -162,8 +162,8 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
 
 ### Phase 5: Data Layer (FDTD Utilities for Phase 2)
 
-- [ ] 5. Build FDTD .npz data loading utilities
-- [ ] 5.1 (P) Implement .npz file loader with metadata extraction
+- [x] 5. Build FDTD .npz data loading utilities
+- [x] 5.1 (P) Implement .npz file loader with metadata extraction
   - Create `FDTDDataLoaderService.load_file()` to read .npz files using `np.load()`
   - Extract spatiotemporal coordinates: x, y, t (flattened arrays)
   - Extract wave field data: T1, T3, Ux, Uy
@@ -171,7 +171,7 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
   - Return `FDTDData` dataclass container with all fields
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-- [ ] 5.2 Implement data validation for .npz files
+- [x] 5.2 Implement data validation for .npz files
   - Create `FDTDDataLoaderService.validate_data()` function
   - Check expected array shape: `(nt*nx*ny,)` for all coordinate/field arrays
   - Verify all required keys present: x, y, t, T1, T3, Ux, Uy, p, d, w, seed
@@ -179,7 +179,7 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
   - Handle `KeyError` for missing keys
   - _Requirements: 8.6_
 
-- [ ] 5.3 (P) Implement multi-file loading with parameter filtering
+- [x] 5.3 (P) Implement multi-file loading with parameter filtering
   - Create `FDTDDataLoaderService.load_multiple()` function
   - Accept optional `pitch_range` and `depth_range` filters (tuples of min/max values)
   - Scan `/PINN_data/` directory for .npz files matching naming pattern `p{pitch}_d{depth}.npz`
@@ -187,7 +187,7 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
   - Concatenate data from multiple files into list of `FDTDData` objects
   - _Requirements: 8.5, 8.7_
 
-- [ ] 5.4 (P) Implement tensor conversion utilities
+- [x] 5.4 (P) Implement tensor conversion utilities
   - Create `TensorConverterService.to_tensor()` to convert NumPy array to PyTorch tensor
   - Support configurable dtype: float32 (for AMP) or float64 (for precision)
   - Support configurable device: CPU or CUDA
@@ -197,22 +197,22 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
 
 ### Phase 6: Tuning Framework
 
-- [ ] 6. Implement automated loss weight tuning framework
-- [ ] 6.1 Implement grid search for weight combinations
+- [x] 6. Implement automated loss weight tuning framework
+- [x] 6.1 Implement grid search for weight combinations
   - Create `WeightTuningFrameworkService._grid_search()` function
   - Accept `weight_ranges` dict: `{"data": [0.1, 1.0, 10.0], "pde": [0.1, 1.0, 10.0], "bc": [0.1, 1.0, 10.0]}`
   - Use `itertools.product()` to generate all combinations
   - Return list of weight dicts for training
   - _Requirements: 6.1_
 
-- [ ] 6.2 (P) Implement random search for weight sampling
+- [x] 6.2 (P) Implement random search for weight sampling
   - Create `WeightTuningFrameworkService._random_search()` function
   - Accept `weight_ranges` dict and `n_samples` parameter
   - Use `random.choice()` to sample weights from ranges
   - Return list of n_samples weight combinations
   - _Requirements: 6.2_
 
-- [ ] 6.3 Implement tuning execution loop
+- [x] 6.3 Implement tuning execution loop
   - Create `WeightTuningFrameworkService.run_tuning()` main entry point
   - Accept `base_config` (ExperimentConfig) and `tuning_config` (search type, ranges, n_samples)
   - Generate weight combinations using grid or random search
@@ -221,14 +221,14 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
   - Identify best configuration by minimum validation error
   - _Requirements: 6.3, 6.4, 6.6_
 
-- [ ] 6.4 (P) Implement tuning results logging
+- [x] 6.4 (P) Implement tuning results logging
   - Save tuning results to JSON or CSV file
   - Include columns: w_data, w_pde, w_bc, validation_error, training_time, timestamp
   - Save to `output_path` from `TuningConfig`
   - Log progress during tuning (e.g., "Completed 5/27 configurations")
   - _Requirements: 6.5_
 
-- [ ] 6.5 (P) Implement tuning visualization
+- [x] 6.5 (P) Implement tuning visualization
   - Create `visualize_results()` function in `WeightTuningFrameworkService`
   - Generate loss landscape heatmap (2D projection of 3D weight space)
   - Generate Pareto frontier plot if multi-objective (validation error vs. training time)
@@ -238,15 +238,15 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
 
 ### Phase 7: Reproducibility & Metadata
 
-- [ ] 7. Implement experiment tracking and reproducibility
-- [ ] 7.1 (P) Implement metadata logger for software versions
+- [x] 7. Implement experiment tracking and reproducibility
+- [x] 7.1 (P) Implement metadata logger for software versions
   - Create `MetadataLogger` utility to capture Python, PyTorch, DeepXDE, NumPy versions
   - Use `sys.version`, `torch.__version__`, `dde.__version__`, etc.
   - Save to `metadata.json` in experiment output directory
   - Include seed, timestamp, config hash for reproducibility
   - _Requirements: 9.3, 9.4_
 
-- [ ] 7.2 Implement experiment directory organization
+- [x] 7.2 Implement experiment directory organization
   - Create timestamped experiment directories: `/experiments/exp_{timestamp}/`
   - Save config YAML to experiment directory for reproducibility
   - Create subdirectories: `checkpoints/`, `logs/`, `plots/`
@@ -255,84 +255,84 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
 
 ### Phase 8: Testing
 
-- [ ] 8. Build comprehensive test suite
-- [ ] 8.1 (P) Write unit tests for PDE residual computation
+- [x] 8. Build comprehensive test suite
+- [x] 8.1 (P) Write unit tests for PDE residual computation
   - Test `wave_equation_residual()` with known analytical gradients
   - Verify residual → 0 for exact analytical solution
   - Test gradient computation with simple polynomial u(x,t)
   - Use pytest with tolerance for numerical errors
   - _Requirements: 10.1_
 
-- [ ] 8.2 (P) Write unit tests for analytical solution generators
+- [x] 8.2 (P) Write unit tests for analytical solution generators
   - Test `standing_wave()` output against textbook formulas
   - Test `traveling_wave()` with known initial conditions
   - Verify solution satisfies wave equation (substitute into PDE)
   - Check boundary condition satisfaction
   - _Requirements: 10.1_
 
-- [ ] 8.3 (P) Write unit tests for error metrics
+- [x] 8.3 (P) Write unit tests for error metrics
   - Test `l2_error()` and `relative_error()` with synthetic arrays
   - Verify zero error for identical arrays
   - Test `max_absolute_error()` with known differences
   - Check edge cases: zero arrays, NaN handling
   - _Requirements: 10.1_
 
-- [ ] 8.4 (P) Write unit tests for FDTD data loader
+- [x] 8.4 (P) Write unit tests for FDTD data loader
   - Create pytest fixture with mock .npz file (extract from `/PINN_data/`)
   - Test `load_file()` extracts all fields correctly
   - Test `validate_data()` catches malformed files (missing keys, wrong shapes)
   - Test `load_multiple()` filtering by pitch/depth ranges
   - _Requirements: 10.3_
 
-- [ ] 8.5 (P) Write unit tests for config loader
+- [x] 8.5 (P) Write unit tests for config loader
   - Test `load_config()` with valid YAML files
   - Test Pydantic validation catches invalid configs (negative wave_speed, t_max < t_min)
   - Test `save_config()` round-trip consistency
   - Test FileNotFoundError handling
   - _Requirements: 10.1_
 
-- [ ] 8.6 Write integration test for end-to-end training
+- [x] 8.6 Write integration test for end-to-end training
   - Train PINN on simple standing wave (fundamental mode, 10 epochs)
   - Assert total loss decreases monotonically
   - Verify loss components (L_pde, L_bc) logged to history
   - Check checkpoint saved to output directory
   - _Requirements: 10.2_
 
-- [ ] 8.7 (P) Write integration test for checkpoint save/load
+- [x] 8.7 (P) Write integration test for checkpoint save/load
   - Train model for 100 epochs, save checkpoint
   - Load checkpoint into new model instance
   - Verify weights match using `torch.allclose()`
   - Test checkpoint contains metadata (epoch, optimizer state)
   - _Requirements: 10.2_
 
-- [ ] 8.8 (P) Write performance test for training time
+- [x] 8.8 (P) Write performance test for training time
   - Train 1D wave PINN with 10k collocation points for 1000 epochs on GPU
   - Measure elapsed time using `time.time()`
   - Assert training completes in <5 minutes (requirement: <5 min for 10k points)
   - Log GPU memory usage during training
   - _Requirements: Non-functional performance_
 
-- [ ] 8.9 (P) Write performance test for data loading
+- [x] 8.9 (P) Write performance test for data loading
   - Load single 4.7 MB .npz file from `/PINN_data/`
   - Measure elapsed time using `time.time()`
   - Assert loading completes in <2 seconds (requirement: <2 sec)
   - _Requirements: Non-functional performance_
 
-- [ ] 8.10 (P) Write convergence test for AMP vs. full precision
+- [x] 8.10 (P) Write convergence test for AMP vs. full precision
   - Train identical PINN configuration with AMP (float16) and full precision (float32)
   - Compare final validation errors
   - Assert relative error difference <5% between AMP and full precision
   - If AMP degrades accuracy >5%, log warning and suggest CPU-only mode
   - _Requirements: 10.2, 5.3_
 
-- [ ] 8.11 Configure pytest coverage measurement
+- [x] 8.11 Configure pytest coverage measurement
   - Set up `pytest-cov` in `pyproject.toml`
   - Configure coverage targets: exclude tests/, venv/, migrations/
   - Run `pytest --cov=pinn --cov-report=html --cov-report=term`
   - Verify coverage meets 70% minimum threshold
   - _Requirements: 10.4_
 
-- [ ] 8.12 Set up Ruff linting and formatting
+- [x] 8.12 Set up Ruff linting and formatting
   - Configure Ruff in `pyproject.toml` with project-specific rules
   - Run `ruff check .` to verify zero errors
   - Set up pre-commit hook (optional) for auto-formatting
@@ -341,22 +341,22 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
 
 ### Phase 9: Documentation & Integration
 
-- [ ] 9. Create documentation and example workflows
-- [ ] 9.1 (P) Write module docstrings following NumPy convention
+- [x] 9. Create documentation and example workflows
+- [x] 9.1 (P) Write module docstrings following NumPy convention
   - Add docstrings to all public functions and classes
   - Include Parameters, Returns, Raises sections
   - Document mathematical formulas in PDE definition module
   - Add type hints to function signatures
   - _Requirements: 10.6, 10.7_
 
-- [ ] 9.2 Create example YAML configuration files
+- [x] 9.2 Create example YAML configuration files
   - Create `configs/standing_wave_example.yaml` for standing wave test case
   - Create `configs/traveling_wave_example.yaml` for traveling wave
   - Create `configs/dirichlet_bc_example.yaml` and `configs/neumann_bc_example.yaml`
   - Document config parameters with inline comments
   - _Requirements: 9.1_
 
-- [ ] 9.3 (P) Create Jupyter notebook demonstration
+- [x] 9.3 (P) Create Jupyter notebook demonstration
   - Create `notebooks/wave_1d_demo.ipynb` showing end-to-end workflow
   - Load config, build model, train PINN, visualize results
   - Include analytical solution comparison plots
@@ -364,7 +364,7 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
   - Show loss weight tuning example (small grid search)
   - _Requirements: Non-functional documentation_
 
-- [ ] 9.4 Create README for /pinn/ module
+- [x] 9.4 Create README for /pinn/ module
   - Document setup instructions: Poetry install, CUDA requirements
   - Provide usage examples: training script invocation, config file format
   - Include analytical validation results (L2 error, training time benchmarks)
@@ -373,8 +373,8 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
 
 ### Phase 10: Final Integration
 
-- [ ] 10. Integrate all components and validate end-to-end
-- [ ] 10.1 Create main training script
+- [x] 10. Integrate all components and validate end-to-end
+- [x] 10.1 Create main training script
   - Create `pinn/training/train.py` CLI script accepting config file path as argument
   - Load config, set seeds, build model, train pipeline
   - Save outputs to timestamped experiment directory
@@ -382,14 +382,14 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
   - Handle exceptions gracefully with error messages
   - _Requirements: 9.3, 9.6_
 
-- [ ] 10.2 Create weight tuning script
-  - Create `pinn/tuning/tune_weights.py` CLI script accepting tuning config
+- [x] 10.2 Create weight tuning script
+  - Create `pinn/tuning/tune_weights_cli.py` CLI script accepting tuning config
   - Execute grid or random search over weight combinations
   - Save tuning results to CSV/JSON
   - Generate loss landscape visualizations
   - _Requirements: 6.1, 6.2, 6.3, 6.5, 6.7_
 
-- [ ] 10.3 Run full integration validation
+- [x] 10.3 Run full integration validation
   - Execute training script with standing wave config: `python pinn/training/train.py configs/standing_wave_example.yaml`
   - Verify outputs: checkpoints saved, plots generated, metadata logged
   - Check validation error <5% threshold
@@ -397,7 +397,7 @@ Implementation tasks for the PINN 1D Foundation feature, organized into logical 
   - Verify best weights identified and logged
   - _Requirements: All functional requirements_
 
-- [ ] 10.4 Verify project structure matches steering conventions
+- [x] 10.4 Verify project structure matches steering conventions
   - Check directory layout: `/pinn/models/`, `/pinn/training/`, `/pinn/validation/`, `/pinn/data/`, `/pinn/tuning/`, `/pinn/utils/`, `/pinn/tests/`
   - Verify file naming: `snake_case.py` modules, `PascalCase` classes
   - Check import organization: stdlib → third-party → local

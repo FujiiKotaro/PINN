@@ -7,7 +7,6 @@ PyTorch, and Python's random module to ensure reproducible results.
 import json
 import random
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import torch
@@ -16,7 +15,7 @@ import torch
 class SeedManager:
     """Utility class for managing random seeds across frameworks."""
 
-    _current_seed: Optional[int] = None
+    _current_seed: int | None = None
 
     @classmethod
     def set_seed(cls, seed: int, verbose: bool = False) -> None:
@@ -83,7 +82,7 @@ class SeedManager:
 
         # Load existing metadata if file exists
         if metadata_path.exists():
-            with open(metadata_path, 'r') as f:
+            with open(metadata_path) as f:
                 metadata = json.load(f)
         else:
             metadata = {}

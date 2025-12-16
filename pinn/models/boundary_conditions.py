@@ -4,9 +4,10 @@ This module provides utilities for creating boundary conditions (Dirichlet, Neum
 and initial conditions (displacement, velocity) for the 1D wave equation PINN.
 """
 
-from typing import Callable
-import numpy as np
+from collections.abc import Callable
+
 import deepxde as dde
+import numpy as np
 
 
 class BoundaryConditionsService:
@@ -84,9 +85,23 @@ class BoundaryConditionsService:
         Returns:
             DeepXDE OperatorBC object for temporal derivative at t=0
         """
+        import torch
+
         def velocity_op(x, y, X):
-            """Operator for computing ∂u/∂t - func(x) at t=0."""
-            return dde.grad.jacobian(y, X, j=1) - func(X)
+            """Operator for computing ∂u/∂t - func(x) at t=0.
+
+            Args:
+                x: Input tensor for autograd (requires_grad=True)
+                y: Network output tensor
+                X: Input values as numpy array
+            """
+            du_dt = dde.grad.jacobian(y, x, j=1)
+            # func takes numpy array X and returns numpy array
+            func_val = func(X)
+            # Convert func_val to tensor if needed
+            if isinstance(du_dt, torch.Tensor):
+                func_val = torch.from_numpy(func_val).to(du_dt.device).to(du_dt.dtype)
+            return du_dt - func_val
 
         return dde.icbc.OperatorBC(
             geomtime,
@@ -108,7 +123,7 @@ class BoundaryConditionsService:
         Returns:
             DeepXDE DirichletBC object with u=0
         """
-        def zero_func(x, _):
+        def zero_func(x):
             return np.zeros((len(x), 1))
 
         def on_boundary(x, on_boundary):
@@ -132,9 +147,18 @@ class BoundaryConditionsService:
         Returns:
             DeepXDE OperatorBC object with ∂u/∂t=0 at t=0
         """
-        def zero_velocity(x):
-            return np.zeros((len(x), 1))
+        def velocity_op(x, y, X):
+            """Operator for computing ∂u/∂t at t=0.
 
-        return BoundaryConditionsService.create_initial_velocity(
-            geomtime, zero_velocity
+            Args:
+                x: Input tensor for autograd (requires_grad=True)
+                y: Network output tensor
+                X: Input values as numpy array
+            """
+            return dde.grad.jacobian(y, x, j=1)
+
+        return dde.icbc.OperatorBC(
+            geomtime,
+            velocity_op,
+            lambda x, on_initial: on_initial
         )

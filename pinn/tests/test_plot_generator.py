@@ -7,14 +7,14 @@ Tests verify:
 4. Multiple time snapshots visualization
 """
 
-import numpy as np
-import pytest
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')  # Non-interactive backend for testing
-import matplotlib.pyplot as plt
-from pathlib import Path
 import tempfile
-import os
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 
 
 class TestPlotTrainingCurves:
@@ -187,7 +187,7 @@ class TestPlotSolutionComparison:
         # Verify each subplot has title indicating time
         for i, ax in enumerate(axes):
             title = ax.get_title()
-            assert str(time_snapshots[i]) in title or f"t=" in title.lower()
+            assert str(time_snapshots[i]) in title or "t=" in title.lower()
 
         plt.close(fig)
 
@@ -222,8 +222,8 @@ class TestPlotGeneratorIntegration:
 
     def test_full_validation_workflow(self):
         """Test complete plotting workflow with training history and solutions."""
-        from pinn.validation.plot_generator import PlotGeneratorService
         from pinn.validation.analytical_solutions import AnalyticalSolutionGeneratorService
+        from pinn.validation.plot_generator import PlotGeneratorService
 
         # Setup: realistic training history
         epochs = 100

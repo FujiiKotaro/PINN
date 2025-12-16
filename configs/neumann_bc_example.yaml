@@ -1,0 +1,78 @@
+# Neumann Boundary Condition Example
+# This configuration demonstrates Neumann BC setup for the 1D wave equation.
+# Neumann BCs enforce ∂u/∂n = 0 at boundaries (zero normal derivative).
+#
+# Use case: Free boundary conditions (open-ended string, reflective boundaries)
+
+experiment_name: "neumann_bc_free_boundary"
+
+# Random seed for reproducibility
+seed: 42
+
+# Spatiotemporal domain configuration
+domain:
+  # Spatial domain: [0, 1]
+  x_min: 0.0
+  x_max: 1.0
+
+  # Temporal domain: [0, 1]
+  t_min: 0.0
+  t_max: 1.0
+
+  # Wave speed parameter (c)
+  wave_speed: 1.2
+
+# Boundary conditions configuration
+boundary_conditions:
+  # Type: Neumann enforces ∂u/∂n = constant at boundaries
+  type: "neumann"
+
+  # Homogeneous Neumann BC: ∂u/∂x(0,t) = 0, ∂u/∂x(L,t) = 0
+  # This allows wave reflection without energy loss
+  left_value: null   # ∂u/∂x(0, t) = 0
+  right_value: null  # ∂u/∂x(L, t) = 0
+
+# Neural network architecture
+network:
+  # Deeper network for Neumann BC (requires learning gradients at boundaries)
+  layer_sizes: [2, 64, 64, 64, 64, 1]
+
+  # Activation function
+  activation: "tanh"
+
+# Training hyperparameters
+training:
+  # More epochs for Neumann BC convergence (harder than Dirichlet)
+  epochs: 12000
+
+  # Lower learning rate for stability with gradient-based BCs
+  learning_rate: 0.0001
+
+  # Optimizer: "adam" or "lbfgs"
+  # LBFGS can be more effective for Neumann BC problems
+  optimizer: "adam"
+
+  # Loss function weights
+  # For Neumann BC, initial conditions are crucial to anchor the solution
+  loss_weights:
+    data: 1.0    # Data fitting loss (not used in pure PINN)
+    pde: 1.0     # PDE residual loss
+    bc: 5.0      # Neumann BC weight (gradient constraints)
+    ic: 500.0     # HIGH initial condition weight - critical for Neumann BC!
+
+  # Enable automatic mixed precision for GPU memory efficiency
+  amp_enabled: true
+
+  # Checkpoint save interval (epochs)
+  checkpoint_interval: 1000
+
+# Analytical solution configuration
+analytical_solution:
+  # Solution type: standing wave with Neumann BC
+  solution_type: "standing_wave_neumann"
+
+  # Mode number (n=1 for first mode with Neumann BC)
+  mode: 1
+
+  # Initial amplitude
+  initial_amplitude: 1.0

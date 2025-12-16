@@ -1,15 +1,17 @@
 """Unit tests for Custom Training Callbacks."""
 
-import pytest
-import numpy as np
-from unittest.mock import Mock, MagicMock, patch
-from pathlib import Path
-import tempfile
 import json
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock
+
+import numpy as np
+import pytest
+
 from pinn.training.callbacks import (
-    LossLoggingCallback,
     CheckpointCallback,
-    DivergenceDetectionCallback
+    DivergenceDetectionCallback,
+    LossLoggingCallback,
 )
 
 
@@ -264,7 +266,7 @@ class TestDivergenceDetectionCallback:
             assert diagnostic_file.exists()
 
             # Check diagnostic content
-            with open(diagnostic_file, 'r') as f:
+            with open(diagnostic_file) as f:
                 diagnostics = json.load(f)
 
             assert diagnostics["epoch"] == 100

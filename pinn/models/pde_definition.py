@@ -4,9 +4,10 @@ This module provides the PDE residual computation for the 1D wave equation
 using DeepXDE's automatic differentiation capabilities.
 """
 
-from typing import Callable
-import torch
+from collections.abc import Callable
+
 import deepxde as dde
+import torch
 
 
 class PDEDefinitionService:

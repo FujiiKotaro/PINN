@@ -1,0 +1,29 @@
+experiment_name: test_quick_train
+seed: 42
+domain:
+  x_min: 0.0
+  x_max: 1.0
+  t_min: 0.0
+  t_max: 1.0
+  wave_speed: 1.0
+boundary_conditions:
+  type: dirichlet
+  left_value: null
+  right_value: null
+network:
+  layer_sizes:
+  - 2
+  - 20
+  - 20
+  - 1
+  activation: tanh
+training:
+  epochs: 10
+  learning_rate: 0.001
+  optimizer: adam
+  loss_weights:
+    data: 1.0
+    pde: 1.0
+    bc: 10.0
+  amp_enabled: false
+  checkpoint_interval: 10

@@ -1,9 +1,10 @@
 """Custom callbacks for PINN training monitoring."""
 
-import numpy as np
 import json
 from pathlib import Path
-from typing import Optional, Any
+from typing import Any
+
+import numpy as np
 
 
 class LossLoggingCallback:
@@ -24,6 +25,30 @@ class LossLoggingCallback:
         }
         self.model = None
 
+    def set_model(self, model: Any) -> None:
+        """Set the model for this callback (required by DeepXDE).
+
+        Args:
+            model: DeepXDE Model instance
+        """
+        self.model = model
+
+    def on_train_begin(self) -> None:
+        """Callback executed at the beginning of training."""
+        pass
+
+    def on_epoch_begin(self) -> None:
+        """Callback executed at the beginning of each epoch."""
+        pass
+
+    def on_batch_begin(self) -> None:
+        """Callback executed at the beginning of each batch."""
+        pass
+
+    def on_batch_end(self) -> None:
+        """Callback executed at the end of each batch."""
+        pass
+
     def on_epoch_end(self) -> None:
         """Callback executed at the end of each epoch.
 
@@ -37,6 +62,10 @@ class LossLoggingCallback:
             self.history["L_pde"].append(float(losses[1]))
             self.history["L_bc"].append(float(losses[2]))
             self.history["total_loss"].append(float(np.sum(losses)))
+
+    def on_train_end(self) -> None:
+        """Callback executed at the end of training."""
+        pass
 
 
 class CheckpointCallback:
@@ -53,6 +82,32 @@ class CheckpointCallback:
         self.save_interval = save_interval
         self.best_loss = float("inf")
         self.model = None
+
+    def set_model(self, model: Any) -> None:
+        """Set the model for this callback (required by DeepXDE).
+
+        Args:
+            model: DeepXDE Model instance
+        """
+        self.model = model
+        # Create output directory if it doesn't exist
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def on_train_begin(self) -> None:
+        """Callback executed at the beginning of training."""
+        pass
+
+    def on_epoch_begin(self) -> None:
+        """Callback executed at the beginning of each epoch."""
+        pass
+
+    def on_batch_begin(self) -> None:
+        """Callback executed at the beginning of each batch."""
+        pass
+
+    def on_batch_end(self) -> None:
+        """Callback executed at the end of each batch."""
+        pass
 
     def on_epoch_end(self) -> None:
         """Callback executed at the end of each epoch.
@@ -75,6 +130,10 @@ class CheckpointCallback:
             )
             self.model.save(str(checkpoint_path))
 
+    def on_train_end(self) -> None:
+        """Callback executed at the end of training."""
+        pass
+
 
 class ValidationCallback:
     """Compute L2 error vs. analytical solution during training."""
@@ -84,10 +143,13 @@ class ValidationCallback:
         analytical_solver: Any,
         error_metrics: Any,
         validation_interval: int,
-        domain_config: dict,
+        domain_config: Any,
         wave_speed: float,
         error_threshold: float = 0.05,
-        n_mode: int = 1
+        n_mode: int = 1,
+        bc_type: str = "dirichlet",
+        initial_condition_func: Any = None,
+        enable_validation: bool = True
     ):
         """Initialize validation callback.
 
@@ -95,10 +157,13 @@ class ValidationCallback:
             analytical_solver: AnalyticalSolutionGeneratorService instance
             error_metrics: ErrorMetricsService instance
             validation_interval: Number of epochs between validation checks
-            domain_config: Dictionary with domain bounds (x_min, x_max, t_min, t_max)
+            domain_config: DomainConfig object or dict with domain bounds (x_min, x_max, t_min, t_max)
             wave_speed: Wave propagation speed c
             error_threshold: Relative error threshold for warnings (default 5%)
             n_mode: Mode number for standing wave (default: fundamental mode)
+            bc_type: Boundary condition type ("dirichlet", "neumann", or "traveling_wave")
+            initial_condition_func: Initial condition function for traveling wave validation
+            enable_validation: Enable validation against analytical solution (default: True)
         """
         self.analytical_solver = analytical_solver
         self.error_metrics = error_metrics
@@ -107,31 +172,119 @@ class ValidationCallback:
         self.wave_speed = wave_speed
         self.error_threshold = error_threshold
         self.n_mode = n_mode
+        self.bc_type = bc_type
+        self.initial_condition_func = initial_condition_func
+        self.enable_validation = enable_validation
 
         self.errors = []
         self.relative_errors = []
         self.model = None
         self.test_points = None
 
+    def set_model(self, model: Any) -> None:
+        """Set the model for this callback (required by DeepXDE).
+
+        Args:
+            model: DeepXDE Model instance
+        """
+        self.model = model
+
+        # Generate test points for validation
+        # Support both dict and Pydantic model
+        if hasattr(self.domain_config, 'x_min'):
+            # Pydantic model
+            x_min = self.domain_config.x_min
+            x_max = self.domain_config.x_max
+            t_min = self.domain_config.t_min
+            t_max = self.domain_config.t_max
+        else:
+            # Dictionary
+            x_min = self.domain_config['x_min']
+            x_max = self.domain_config['x_max']
+            t_min = self.domain_config['t_min']
+            t_max = self.domain_config['t_max']
+
+        x_test = np.linspace(x_min, x_max, 100)
+        t_test = np.linspace(t_min, t_max, 100)
+        X_test, T_test = np.meshgrid(x_test, t_test)
+        self.test_points = np.column_stack([X_test.flatten(), T_test.flatten()])
+
+    def on_train_begin(self) -> None:
+        """Callback executed at the beginning of training."""
+        pass
+
+    def on_epoch_begin(self) -> None:
+        """Callback executed at the beginning of each epoch."""
+        pass
+
+    def on_batch_begin(self) -> None:
+        """Callback executed at the beginning of each batch."""
+        pass
+
+    def on_batch_end(self) -> None:
+        """Callback executed at the end of each batch."""
+        pass
+
     def on_epoch_end(self) -> None:
         """Callback executed at the end of each epoch.
 
         Computes L2 error vs. analytical solution if current epoch
-        is a multiple of validation_interval.
+        is a multiple of validation_interval and validation is enabled.
         """
+        if not self.enable_validation:
+            return
+
         if self.model.train_state.epoch % self.validation_interval == 0:
             # Get PINN predictions
             u_pred = self.model.predict(self.test_points)
 
             # Get analytical solution
-            L = self.domain_config["x_max"] - self.domain_config["x_min"]
-            u_exact = self.analytical_solver.evaluate_at_points(
-                self.test_points,
-                L=L,
-                c=self.wave_speed,
-                solution_type="standing",
-                n=self.n_mode
-            ).reshape(-1, 1)
+            # Support both dict and Pydantic model
+            if hasattr(self.domain_config, 'x_min'):
+                # Pydantic model
+                x_min = self.domain_config.x_min
+                x_max = self.domain_config.x_max
+            else:
+                # Dictionary
+                x_min = self.domain_config['x_min']
+                x_max = self.domain_config['x_max']
+
+            L = x_max - x_min
+
+            # Select solution type based on boundary condition
+            if self.bc_type == "neumann":
+                solution_type = "standing_neumann"
+                u_exact = self.analytical_solver.evaluate_at_points(
+                    self.test_points,
+                    L=L,
+                    c=self.wave_speed,
+                    solution_type=solution_type,
+                    n=self.n_mode
+                ).reshape(-1, 1)
+            elif self.bc_type == "traveling_wave":
+                # For traveling wave, compute analytical solution manually
+                x_vals = self.test_points[:, 0]
+                t_vals = self.test_points[:, 1]
+                # Use traveling_wave method which requires meshgrid
+                x_unique = np.unique(x_vals)
+                t_unique = np.unique(t_vals)
+                u_analytical_grid = self.analytical_solver.traveling_wave(
+                    x=x_unique,
+                    t=t_unique,
+                    c=self.wave_speed,
+                    initial_condition=self.initial_condition_func
+                )
+                # Flatten to match test_points order
+                u_exact = u_analytical_grid.T.flatten().reshape(-1, 1)
+            else:  # dirichlet
+                solution_type = "standing"
+                u_exact = self.analytical_solver.evaluate_at_points(
+                    self.test_points,
+                    L=L,
+                    c=self.wave_speed,
+                    solution_type=solution_type,
+                    n=self.n_mode
+                ).reshape(-1, 1)
 
             # Compute errors
             l2_error = self.error_metrics.l2_error(u_pred, u_exact)
@@ -147,6 +300,10 @@ class ValidationCallback:
                     f"WARNING: High validation error ({rel_error:.4f}) at epoch "
                     f"{self.model.train_state.epoch}, may need hyperparameter tuning"
                 )
+
+    def on_train_end(self) -> None:
+        """Callback executed at the end of training."""
+        pass
 
 
 class DivergenceDetectionCallback:
@@ -167,6 +324,30 @@ class DivergenceDetectionCallback:
         self.nan_threshold = nan_threshold
         self.divergence_detected = False
         self.model = None
+
+    def set_model(self, model: Any) -> None:
+        """Set the model for this callback (required by DeepXDE).
+
+        Args:
+            model: DeepXDE Model instance
+        """
+        self.model = model
+
+    def on_train_begin(self) -> None:
+        """Callback executed at the beginning of training."""
+        pass
+
+    def on_epoch_begin(self) -> None:
+        """Callback executed at the beginning of each epoch."""
+        pass
+
+    def on_batch_begin(self) -> None:
+        """Callback executed at the beginning of each batch."""
+        pass
+
+    def on_batch_end(self) -> None:
+        """Callback executed at the end of each batch."""
+        pass
 
     def on_epoch_end(self) -> None:
         """Callback executed at the end of each epoch.
@@ -201,3 +382,7 @@ class DivergenceDetectionCallback:
 
             print(f"ERROR: Loss divergence detected at epoch {self.model.train_state.epoch}")
             print(f"Diagnostic information saved to: {diagnostic_path}")
+
+    def on_train_end(self) -> None:
+        """Callback executed at the end of training."""
+        pass

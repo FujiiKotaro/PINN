@@ -1,8 +1,9 @@
 """Unit tests for Validation Callback."""
 
-import pytest
-import numpy as np
 from unittest.mock import Mock, patch
+
+import numpy as np
+
 from pinn.training.callbacks import ValidationCallback
 from pinn.validation.analytical_solutions import AnalyticalSolutionGeneratorService
 from pinn.validation.error_metrics import ErrorMetricsService

@@ -1,9 +1,10 @@
 """Unit tests for Training Pipeline Service."""
 
-import pytest
-import torch
+from unittest.mock import Mock, patch
+
 import numpy as np
-from unittest.mock import Mock, patch, MagicMock
+import pytest
+
 from pinn.training.training_pipeline import TrainingPipelineService
 
 
@@ -121,8 +122,6 @@ class TestTrainingPipeline:
 
     def test_train_method_signature(self):
         """Test train method has correct signature."""
-        from pathlib import Path
-        from unittest.mock import Mock
         import inspect
 
         service = TrainingPipelineService()

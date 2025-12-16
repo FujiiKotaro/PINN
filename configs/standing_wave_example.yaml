@@ -1,0 +1,80 @@
+# Standing Wave Example Configuration
+# This configuration demonstrates a 1D PINN setup for a standing wave solution
+# to the wave equation with Dirichlet boundary conditions (u=0 at boundaries).
+#
+# Analytical solution: u(x,t) = sin(πx/L) cos(πct/L)
+
+experiment_name: "standing_wave_fundamental_mode"
+
+# Random seed for reproducibility
+seed: 42
+
+# Spatiotemporal domain configuration
+domain:
+  # Spatial domain: [0, 1]
+  x_min: 0.0
+  x_max: 1.0
+
+  # Temporal domain: [0, 1]
+  t_min: 0.0
+  t_max: 1.0
+
+  # Wave speed parameter (c)
+  wave_speed: 1.0
+
+# Boundary conditions configuration
+boundary_conditions:
+  # Type: "dirichlet", "neumann", or "periodic"
+  type: "dirichlet"
+
+  # For Dirichlet BC: u(0,t) = left_value, u(L,t) = right_value
+  # Setting to null defaults to zero Dirichlet BC
+  left_value: null
+  right_value: null
+
+# Neural network architecture
+network:
+  # Layer sizes: [input_dim, hidden1, hidden2, ..., output_dim]
+  # For 1D wave: input = (x, t) → 2 dims, output = u → 1 dim
+  layer_sizes: [2, 50, 50, 50, 1]
+
+  # Activation function: "tanh", "relu", or "sigmoid"
+  # tanh is recommended for PINNs due to smooth derivatives
+  activation: "tanh"
+
+# Training hyperparameters
+training:
+  # Number of training epochs
+  epochs: 10000
+
+  # Learning rate for optimizer
+  learning_rate: 0.001
+
+  # Optimizer: "adam" or "lbfgs"
+  # Adam is recommended for large-scale training
+  optimizer: "adam"
+
+  # Loss function weights
+  # L_total = w_bc × L_bc + w_ic × (L_ic_disp + L_ic_vel) + w_pde × L_pde
+  loss_weights:
+    data: 1.0   # Weight for data fitting loss (if training data provided)
+    pde: 1.0    # Weight for PDE residual loss
+    bc: 10.0    # Weight for boundary condition loss
+    ic: 10.0    # Weight for initial conditions (displacement + velocity)
+
+  # Enable automatic mixed precision for GPU memory efficiency
+  amp_enabled: true
+
+  # Checkpoint save interval (epochs)
+  checkpoint_interval: 1000
+
+# Analytical solution configuration
+analytical_solution:
+  # Solution type: standing wave with Dirichlet BC
+  solution_type: "standing_wave"
+
+  # Mode number (n=1 for fundamental mode)
+  mode: 1
+
+  # Initial amplitude
+  initial_amplitude: 1.0

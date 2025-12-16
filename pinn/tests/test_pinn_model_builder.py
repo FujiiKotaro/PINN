@@ -4,15 +4,15 @@ This module tests the PINNModelBuilderService for constructing complete
 DeepXDE PINN models.
 """
 
-import pytest
 import deepxde as dde
 import numpy as np
+import pytest
 
 from pinn.models.pinn_model_builder import PINNModelBuilderService
 from pinn.utils.config_loader import (
-    ExperimentConfig,
-    DomainConfig,
     BoundaryConditionConfig,
+    DomainConfig,
+    ExperimentConfig,
     NetworkConfig,
     TrainingConfig,
 )

@@ -1,8 +1,8 @@
 """AMP Wrapper Service for GPU-accelerated mixed precision training."""
 
-import torch
 from contextlib import contextmanager
-from typing import Optional
+
+import torch
 
 
 class AMPWrapperService:

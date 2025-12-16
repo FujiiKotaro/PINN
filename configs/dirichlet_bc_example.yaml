@@ -1,0 +1,76 @@
+# Dirichlet Boundary Condition Example
+# This configuration demonstrates explicit Dirichlet BC setup for the 1D wave equation.
+# Dirichlet BCs enforce u(0,t) = u(L,t) = 0 at the domain boundaries.
+#
+# Use case: Fixed boundary conditions (clamped string, rigid wall reflections)
+
+experiment_name: "dirichlet_bc_clamped_string"
+
+# Random seed for reproducibility
+seed: 42
+
+# Spatiotemporal domain configuration
+domain:
+  # Spatial domain: [0, 1]
+  x_min: 0.0
+  x_max: 1.0
+
+  # Temporal domain: [0, 0.5] (shorter time for quick validation)
+  t_min: 0.0
+  t_max: 0.5
+
+  # Wave speed parameter (c)
+  wave_speed: 1.0
+
+# Boundary conditions configuration
+boundary_conditions:
+  # Type: Dirichlet enforces u = constant at boundaries
+  type: "dirichlet"
+
+  # Homogeneous Dirichlet BC: u(0,t) = 0, u(L,t) = 0
+  # Set to null for zero BC, or specify values for non-zero BC
+  left_value: null   # u(0, t) = 0
+  right_value: null  # u(L, t) = 0
+
+# Neural network architecture
+network:
+  # Standard architecture for Dirichlet BC
+  layer_sizes: [2, 50, 50, 50, 1]
+
+  # Activation function
+  activation: "tanh"
+
+# Training hyperparameters
+training:
+  # Moderate epoch count for validation
+  epochs: 8000
+
+  # Learning rate for optimizer
+  learning_rate: 0.0001
+
+  # Optimizer: "adam" or "lbfgs"
+  optimizer: "adam"
+
+  # Loss function weights
+  # High BC weight to enforce Dirichlet constraints strongly
+  loss_weights:
+    data: 1.0    # Data fitting loss
+    pde: 1.0     # PDE residual loss
+    bc: 5.0     # Strong enforcement of boundary conditions
+
+  # Enable automatic mixed precision for GPU memory efficiency
+  amp_enabled: true
+
+  # Checkpoint save interval (epochs)
+  checkpoint_interval: 500
+
+# Analytical solution configuration
+analytical_solution:
+  # Solution type: standing wave with Dirichlet BC
+  solution_type: "standing_wave"
+
+  # Mode number (n=1 for fundamental mode)
+  mode: 1
+
+  # Initial amplitude
+  initial_amplitude: 1.0

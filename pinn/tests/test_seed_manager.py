@@ -4,13 +4,12 @@ This module tests the SeedManager for setting random seeds across
 NumPy, PyTorch, and Python's random module.
 """
 
-import pytest
 import json
-import tempfile
+import random
 from pathlib import Path
+
 import numpy as np
 import torch
-import random
 
 from pinn.utils.seed_manager import SeedManager
 
@@ -74,7 +73,7 @@ class TestSeedManager:
 
         assert metadata_file.exists()
 
-        with open(metadata_file, 'r') as f:
+        with open(metadata_file) as f:
             metadata = json.load(f)
 
         assert "seed" in metadata
@@ -93,7 +92,7 @@ class TestSeedManager:
         SeedManager.log_seed_metadata(42, str(metadata_file))
 
         # Verify both old and new data present
-        with open(metadata_file, 'r') as f:
+        with open(metadata_file) as f:
             metadata = json.load(f)
 
         assert metadata["experiment_name"] == "test"

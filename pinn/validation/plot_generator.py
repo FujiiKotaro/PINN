@@ -5,11 +5,11 @@ Generates publication-quality plots for:
 - Solution comparisons (PINN vs analytical)
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 
 # Set publication-quality style
 sns.set_style("whitegrid")
@@ -22,10 +22,10 @@ class PlotGeneratorService:
 
     def plot_training_curves(
         self,
-        history: Dict[str, List[float]],
-        save_path: Optional[Path] = None,
+        history: dict[str, list[float]],
+        save_path: Path | None = None,
         log_scale: bool = False
-    ) -> Tuple[plt.Figure, plt.Axes]:
+    ) -> tuple[plt.Figure, plt.Axes]:
         """Plot training loss curves over epochs.
 
         Args:
@@ -87,11 +87,11 @@ class PlotGeneratorService:
     def plot_solution_comparison(
         self,
         x: np.ndarray,
-        time_snapshots: List[float],
-        u_pinn: Dict[float, np.ndarray],
-        u_analytical: Dict[float, np.ndarray],
-        save_path: Optional[Path] = None
-    ) -> Tuple[plt.Figure, List[plt.Axes]]:
+        time_snapshots: list[float],
+        u_pinn: dict[float, np.ndarray],
+        u_analytical: dict[float, np.ndarray],
+        save_path: Path | None = None
+    ) -> tuple[plt.Figure, list[plt.Axes]]:
         """Plot PINN predictions vs analytical solutions at multiple time snapshots.
 
         Args:
@@ -161,9 +161,9 @@ class PlotGeneratorService:
     def plot_error_evolution(
         self,
         epochs: np.ndarray,
-        errors: Dict[str, List[float]],
-        save_path: Optional[Path] = None
-    ) -> Tuple[plt.Figure, plt.Axes]:
+        errors: dict[str, list[float]],
+        save_path: Path | None = None
+    ) -> tuple[plt.Figure, plt.Axes]:
         """Plot validation error evolution over training.
 
         Args:
@@ -216,9 +216,9 @@ class PlotGeneratorService:
 
     def plot_loss_landscape(
         self,
-        tuning_results: List[Dict],
-        save_path: Optional[Path] = None
-    ) -> Tuple[plt.Figure, plt.Axes]:
+        tuning_results: list[dict],
+        save_path: Path | None = None
+    ) -> tuple[plt.Figure, plt.Axes]:
         """Plot loss landscape from weight tuning results.
 
         Args:

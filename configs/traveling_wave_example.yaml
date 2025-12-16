@@ -1,0 +1,84 @@
+# Traveling Wave Example Configuration
+# This configuration demonstrates a 1D PINN setup for a traveling wave solution
+# using d'Alembert's formula with Neumann boundary conditions.
+#
+# Analytical solution: u(x,t) = f(x - ct) + g(x + ct)
+
+experiment_name: "traveling_wave_dalembert"
+
+# Random seed for reproducibility
+seed: 42
+
+# Spatiotemporal domain configuration
+domain:
+  # Spatial domain: [0, 2] (wider domain for wave propagation)
+  x_min: 0.0
+  x_max: 2.0
+
+  # Temporal domain: [0, 2]
+  t_min: 0.0
+  t_max: 2.0
+
+  # Wave speed parameter (c)
+  # Higher wave speed for faster propagation
+  wave_speed: 1.5
+
+# Boundary conditions configuration
+boundary_conditions:
+  # Type: "dirichlet", "neumann", or "periodic"
+  # Neumann BC allows wave reflection at boundaries
+  type: "neumann"
+
+  # For Neumann BC: ∂u/∂n = 0 at boundaries (zero normal derivative)
+  left_value: null
+  right_value: null
+
+# Neural network architecture
+network:
+  # Larger network for capturing traveling wave dynamics
+  layer_sizes: [2, 64, 64, 64, 1]
+
+  # Activation function
+  activation: "tanh"
+
+# Training hyperparameters
+training:
+  # More epochs for traveling wave convergence
+  epochs: 15000
+
+  # Learning rate for optimizer
+  learning_rate: 0.0008
+
+  # Optimizer: "adam" or "lbfgs"
+  optimizer: "adam"
+
+  # Loss function weights
+  # Emphasize PDE residual for traveling wave physics
+  loss_weights:
+    data: 0.5   # Lower data weight if using analytical solution
+    pde: 2.0    # Higher PDE weight for physics enforcement
+    bc: 5.0     # Moderate BC weight for Neumann conditions
+
+  # Enable automatic mixed precision for GPU memory efficiency
+  amp_enabled: true
+
+  # Checkpoint save interval (epochs)
+  checkpoint_interval: 1000
+
+# Analytical solution configuration
+analytical_solution:
+  # Solution type: traveling wave (d'Alembert's solution)
+  # NOTE: d'Alembert's solution is valid for infinite domain only.
+  # With Neumann BC in finite domain, the wave reflects at boundaries,
+  # making the analytical solution incompatible with the BC after reflection.
+  solution_type: "traveling_wave"
+
+  # Mode parameter (not used for traveling wave, but required)
+  mode: 1
+
+  # Initial amplitude
+  initial_amplitude: 1.0
+
+  # Disable validation for traveling wave with bounded domain
+  # PINN will still learn the correct physics with BC enforcement
+  enable_validation: false
