@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+from pinn.data.parameter_normalizer import ParameterNormalizer
+
 
 @dataclass
 class FDTDData:
@@ -51,6 +53,46 @@ class FDTDData:
     nx_sample: int
     ny_sample: int
     nt_sample: int
+
+
+@dataclass
+class FDTDDataset2D:
+    """Container for 2D parametric PINN dataset from multiple FDTD files.
+
+    This dataset combines data from multiple .npz files with different crack
+    parameters (pitch, depth), providing parametric training data for conditional PINN.
+
+    Attributes:
+        x: Spatial x-coordinates (N_total,) in meters
+        y: Spatial y-coordinates (N_total,) in meters
+        t: Temporal coordinates (N_total,) in seconds
+        pitch_norm: Normalized pitch parameters (N_total,) in [0, 1]
+        depth_norm: Normalized depth parameters (N_total,) in [0, 1]
+        T1: Normal stress component 1 (N_total,) in Pa
+        T3: Normal stress component 3 (N_total,) in Pa
+        Ux: Particle velocity x-component (N_total,) in m/s
+        Uy: Particle velocity y-component (N_total,) in m/s
+        metadata: Dictionary with file paths and original parameters
+
+    where N_total = sum of samples from all loaded files
+    """
+    # Spatiotemporal coordinates (physical units)
+    x: np.ndarray
+    y: np.ndarray
+    t: np.ndarray
+
+    # Normalized crack parameters (replicated for each spatiotemporal point)
+    pitch_norm: np.ndarray  # [0, 1]
+    depth_norm: np.ndarray  # [0, 1]
+
+    # Wave field data (physical units)
+    T1: np.ndarray
+    T3: np.ndarray
+    Ux: np.ndarray
+    Uy: np.ndarray
+
+    # Metadata
+    metadata: dict  # Contains 'files' list and 'params' list
 
 
 class FDTDDataLoaderService:
@@ -233,3 +275,280 @@ class FDTDDataLoaderService:
                 continue
 
         return loaded_data
+
+    def load_multiple_files(
+        self,
+        file_paths: list[Path],
+        pitch_range: tuple[float, float] | None = None,
+        depth_range: tuple[float, float] | None = None
+    ) -> FDTDDataset2D:
+        """Load and concatenate multiple .npz files into parametric dataset.
+
+        Args:
+            file_paths: List of paths to .npz files
+            pitch_range: Optional (min, max) pitch filter in meters
+                        Default: (1.25e-3, 2.0e-3)
+            depth_range: Optional (min, max) depth filter in meters
+                        Default: (0.1e-3, 0.3e-3)
+
+        Returns:
+            FDTDDataset2D with concatenated data from all files
+
+        Raises:
+            ValueError: If file_paths is empty
+            FileNotFoundError: If any file doesn't exist
+
+        Preconditions:
+            - All files must exist and have valid .npz format
+            - file_paths must not be empty
+
+        Postconditions:
+            - Returns dataset with N_total samples (sum of all files)
+            - pitch_norm, depth_norm in [0, 1] range
+            - Parameters replicated for each spatiotemporal point
+
+        Example:
+            >>> loader = FDTDDataLoaderService()
+            >>> files = [Path("p1250_d100.npz"), Path("p1500_d200.npz")]
+            >>> dataset = loader.load_multiple_files(files)
+            >>> dataset.x.shape  # (N_total,)
+        """
+        if not file_paths:
+            raise ValueError("No files provided")
+
+        # Use default ranges if not specified
+        if pitch_range is None:
+            pitch_range = (ParameterNormalizer.PITCH_MIN,
+                          ParameterNormalizer.PITCH_MAX)
+        if depth_range is None:
+            depth_range = (ParameterNormalizer.DEPTH_MIN,
+                          ParameterNormalizer.DEPTH_MAX)
+
+        # Load individual files
+        loaded_files = []
+        metadata_files = []
+        metadata_params = []
+
+        for file_path in file_paths:
+            # Load file
+            data = self.load_file(file_path)
+
+            # Filter by parameter ranges
+            min_pitch, max_pitch = pitch_range
+            if not (min_pitch <= data.pitch <= max_pitch):
+                continue
+
+            min_depth, max_depth = depth_range
+            if not (min_depth <= data.depth <= max_depth):
+                continue
+
+            # Validate
+            self.validate_data(data)
+
+            loaded_files.append(data)
+            metadata_files.append(str(file_path))
+            metadata_params.append({
+                'pitch': data.pitch,
+                'depth': data.depth,
+                'seed': data.seed
+            })
+
+        if not loaded_files:
+            raise ValueError(
+                f"No files passed filters: pitch {pitch_range}, depth {depth_range}"
+            )
+
+        # Concatenate data from all files
+        all_x = []
+        all_y = []
+        all_t = []
+        all_pitch_norm = []
+        all_depth_norm = []
+        all_T1 = []
+        all_T3 = []
+        all_Ux = []
+        all_Uy = []
+
+        for data in loaded_files:
+            n_samples = len(data.x)
+
+            # Normalize parameters
+            pitch_norm = ParameterNormalizer.normalize_pitch(
+                np.array([data.pitch])
+            )[0]
+            depth_norm = ParameterNormalizer.normalize_depth(
+                np.array([data.depth])
+            )[0]
+
+            # Replicate normalized parameters for each spatiotemporal point
+            pitch_norm_replicated = np.full(n_samples, pitch_norm)
+            depth_norm_replicated = np.full(n_samples, depth_norm)
+
+            # Append to lists
+            all_x.append(data.x)
+            all_y.append(data.y)
+            all_t.append(data.t)
+            all_pitch_norm.append(pitch_norm_replicated)
+            all_depth_norm.append(depth_norm_replicated)
+            all_T1.append(data.T1)
+            all_T3.append(data.T3)
+            all_Ux.append(data.Ux)
+            all_Uy.append(data.Uy)
+
+        # Concatenate all arrays
+        dataset = FDTDDataset2D(
+            x=np.concatenate(all_x),
+            y=np.concatenate(all_y),
+            t=np.concatenate(all_t),
+            pitch_norm=np.concatenate(all_pitch_norm),
+            depth_norm=np.concatenate(all_depth_norm),
+            T1=np.concatenate(all_T1),
+            T3=np.concatenate(all_T3),
+            Ux=np.concatenate(all_Ux),
+            Uy=np.concatenate(all_Uy),
+            metadata={
+                'files': metadata_files,
+                'params': metadata_params
+            }
+        )
+
+        return dataset
+
+    def train_val_split(
+        self,
+        dataset: FDTDDataset2D,
+        train_ratio: float = 0.8,
+        seed: int = 42,
+        validation_equals_train: bool = False
+    ) -> tuple[FDTDDataset2D, FDTDDataset2D]:
+        """Split dataset into train/validation sets.
+
+        Args:
+            dataset: FDTDDataset2D to split
+            train_ratio: Fraction of data for training (default: 0.8)
+            seed: Random seed for reproducibility (default: 42)
+            validation_equals_train: If True, validation uses same data as training
+                                    (for overfitting monitoring) (default: False)
+
+        Returns:
+            (train_dataset, val_dataset) both as FDTDDataset2D
+
+        Raises:
+            ValueError: If train_ratio not in (0, 1]
+
+        Preconditions:
+            - dataset must be valid FDTDDataset2D
+            - train_ratio must be in (0, 1]
+
+        Postconditions:
+            - len(train) + len(val) == len(dataset) (unless validation_equals_train=True)
+            - Both datasets preserve all fields
+            - Metadata includes split_info with train_ratio and seed
+            - Splitting is reproducible with same seed
+
+        Example:
+            >>> loader = FDTDDataLoaderService()
+            >>> dataset = loader.load_multiple_files([Path("p1250_d100.npz")])
+            >>> train, val = loader.train_val_split(dataset, train_ratio=0.8, seed=42)
+            >>> len(train.x) + len(val.x) == len(dataset.x)  # True
+        """
+        # Validate train_ratio
+        if train_ratio <= 0 or train_ratio > 1:
+            raise ValueError("train_ratio must be between 0 and 1")
+
+        # Special case: validation_equals_train
+        if validation_equals_train and train_ratio == 1.0:
+            # Both train and val use all data
+            train_metadata = {
+                **dataset.metadata,
+                'split_info': {'train_ratio': train_ratio, 'seed': seed}
+            }
+            val_metadata = {
+                **dataset.metadata,
+                'split_info': {'train_ratio': train_ratio, 'seed': seed}
+            }
+
+            train_dataset = FDTDDataset2D(
+                x=dataset.x.copy(),
+                y=dataset.y.copy(),
+                t=dataset.t.copy(),
+                pitch_norm=dataset.pitch_norm.copy(),
+                depth_norm=dataset.depth_norm.copy(),
+                T1=dataset.T1.copy(),
+                T3=dataset.T3.copy(),
+                Ux=dataset.Ux.copy(),
+                Uy=dataset.Uy.copy(),
+                metadata=train_metadata
+            )
+
+            val_dataset = FDTDDataset2D(
+                x=dataset.x.copy(),
+                y=dataset.y.copy(),
+                t=dataset.t.copy(),
+                pitch_norm=dataset.pitch_norm.copy(),
+                depth_norm=dataset.depth_norm.copy(),
+                T1=dataset.T1.copy(),
+                T3=dataset.T3.copy(),
+                Ux=dataset.Ux.copy(),
+                Uy=dataset.Uy.copy(),
+                metadata=val_metadata
+            )
+
+            return train_dataset, val_dataset
+
+        # Set random seed for reproducibility
+        np.random.seed(seed)
+
+        # Get total size
+        N_total = len(dataset.x)
+
+        # Calculate split sizes
+        N_train = int(N_total * train_ratio)
+
+        # Create random permutation of indices
+        indices = np.random.permutation(N_total)
+
+        # Split indices
+        train_indices = indices[:N_train]
+        val_indices = indices[N_train:]
+
+        # Create metadata with split info
+        train_metadata = {
+            **dataset.metadata,
+            'split_info': {'train_ratio': train_ratio, 'seed': seed}
+        }
+
+        val_metadata = {
+            **dataset.metadata,
+            'split_info': {'train_ratio': train_ratio, 'seed': seed}
+        }
+
+        # Create train dataset
+        train_dataset = FDTDDataset2D(
+            x=dataset.x[train_indices],
+            y=dataset.y[train_indices],
+            t=dataset.t[train_indices],
+            pitch_norm=dataset.pitch_norm[train_indices],
+            depth_norm=dataset.depth_norm[train_indices],
+            T1=dataset.T1[train_indices],
+            T3=dataset.T3[train_indices],
+            Ux=dataset.Ux[train_indices],
+            Uy=dataset.Uy[train_indices],
+            metadata=train_metadata
+        )
+
+        # Create val dataset
+        val_dataset = FDTDDataset2D(
+            x=dataset.x[val_indices],
+            y=dataset.y[val_indices],
+            t=dataset.t[val_indices],
+            pitch_norm=dataset.pitch_norm[val_indices],
+            depth_norm=dataset.depth_norm[val_indices],
+            T1=dataset.T1[val_indices],
+            T3=dataset.T3[val_indices],
+            Ux=dataset.Ux[val_indices],
+            Uy=dataset.Uy[val_indices],
+            metadata=val_metadata
+        )
+
+        return train_dataset, val_dataset

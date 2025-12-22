@@ -232,10 +232,67 @@ Record major decisions that influence `design.md`. Focus on choices with signifi
   - **Compromises**: Stricter than aggregate (harder to pass), may trigger false alarms if one field inherently harder to learn
 - **Follow-up**: Log per-field R² in ValidationCallback, emit warning if ANY field < 0.9, suggest field-specific loss weight tuning.
 
+### Decision: Non-dimensionalization Strategy for Loss Scaling
+
+- **Context**: Past experiments showed PDE and boundary loss terms becoming excessively large (orders of magnitude larger than data loss), causing training instability and gradient imbalance. Physical quantities have vastly different scales: stress (GPa order ~1e9 Pa), displacement (nm-μm order ~1e-9 to 1e-6 m), spatial domain (cm order ~1e-2 m), time (μs order ~1e-6 s).
+- **Alternatives Considered**:
+  1. **No Normalization**: Use raw physical units, rely on loss weight tuning to balance scales
+  2. **Output-Only Normalization**: Normalize only outputs (T1, T3, Ux, Uy) to [0, 1] or [-1, 1] range
+  3. **Full Non-dimensionalization**: Transform all variables (x, y, t, outputs) to dimensionless form using characteristic scales
+  4. **Adaptive Loss Weighting (ReLoBRaLo)**: Automatically balance loss terms based on gradients during training
+- **Selected Approach**: Full non-dimensionalization (option 3) with characteristic scales derived from problem physics and FDTD data statistics
+- **Rationale**:
+  - **Scale homogenization**: Dimensionless PDE has O(1) coefficients, eliminates ~9 orders of magnitude difference between stress and displacement
+  - **Gradient balance**: All loss terms (data, PDE, BC) have similar magnitudes, preventing one term from dominating
+  - **Numerical stability**: Avoids floating-point precision issues from mixing vastly different scales
+  - **Physical interpretability**: Characteristic scales (L_ref, T_ref, U_ref, σ_ref) provide physical insight into dominant phenomena
+  - **Proven in literature**: Standard practice in CFD/wave propagation PINNs (Lu et al. 2021, Raissi et al. 2019)
+- **Characteristic Scales**:
+  - **Spatial scale**: L_ref = 0.04 m (x-direction domain size, largest spatial extent)
+  - **Temporal scale**: T_ref = L_ref / c_l ≈ 6.35e-6 s (longitudinal wave crossing time), where c_l = sqrt((λ+2μ)/ρ) ≈ 6300 m/s
+  - **Displacement scale**: U_ref = 1e-9 m (1 nm, typical displacement amplitude from FDTD data inspection)
+  - **Stress scale**: σ_ref = ρ * c_l^2 ≈ 107 GPa (characteristic impedance, ensures σ_ref ~ E where E is Young's modulus)
+- **Dimensionless Variables**:
+  - x̃ = x / L_ref, ỹ = y / L_ref (spatial coordinates → [0, 1] × [0, 0.5])
+  - t̃ = t / T_ref (time → [0.55, 1.02] for [3.5μs, 6.5μs] domain)
+  - Ũx = Ux / U_ref, Ũy = Uy / U_ref (displacements → O(1))
+  - T̃1 = T1 / σ_ref, T̃3 = T3 / σ_ref (stresses → O(1))
+  - p̃ = (p - p_min) / (p_max - p_min) (pitch already normalized to [0, 1])
+  - d̃ = (d - d_min) / (d_max - d_min) (depth already normalized to [0, 1])
+- **Dimensionless PDE**:
+  - Original: ∂²Ux/∂t² = c_l² (∂²Ux/∂x² + ∂²Ux/∂y²)
+  - After substitution: (U_ref/T_ref²) ∂²Ũx/∂t̃² = c_l² (U_ref/L_ref²) (∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ²)
+  - Simplify: ∂²Ũx/∂t̃² = (c_l·T_ref/L_ref)² (∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ²) = ∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ² (since T_ref = L_ref/c_l by design)
+  - **Result**: All PDE coefficients become O(1), residual automatically scaled
+- **Trade-offs**:
+  - **Benefits**:
+    - Eliminates loss scaling problem (all terms O(1))
+    - Stable gradients across all output fields
+    - Simpler loss weight tuning (w_data, w_pde, w_bc all start near 1.0)
+    - No need for adaptive loss weighting algorithms
+  - **Compromises**:
+    - Additional preprocessing step (scaling input/output)
+    - Post-processing required for physical interpretation (denormalization)
+    - Requires careful selection of characteristic scales (sensitivity analysis needed)
+    - Slight overhead in forward/backward pass (scaling operations)
+- **Follow-up**:
+  - Implement DimensionlessScalerService to encapsulate all scaling logic
+  - Validate characteristic scales by inspecting FDTD data statistics (mean, std, max of each field)
+  - If loss imbalance persists after non-dimensionalization, apply ReLoBRaLo as secondary measure
+  - Document scaling constants in config YAML for reproducibility
+
 ## Risks & Mitigations
 
+- **Risk 0: Loss scaling imbalance (ADDRESSED)** — Phase 1 observed PDE loss >> data loss (orders of magnitude difference) causing gradient instability
+  - **Root Cause**: Physical quantities have vastly different scales (stress ~10^9 Pa, displacement ~10^-9 m)
+  - **Mitigation (IMPLEMENTED)**: Full non-dimensionalization via DimensionlessScalerService
+    - All variables scaled to O(1) using characteristic scales (L_ref, T_ref, U_ref, σ_ref)
+    - PDE coefficients automatically become O(1) due to T_ref = L_ref/c_l design
+    - Data loss and PDE loss now have similar magnitude → simple loss weight tuning
+  - **Status**: Design decision finalized, DimensionlessScalerService added to architecture
+
 - **Risk 1: Multi-output gradient conflicts** — During backpropagation, gradients from 4 output fields may conflict, causing training instability
-  - **Mitigation**: Use per-field loss weights (w_T1, w_T3, w_Ux, w_Uy) to balance gradients; Phase 1's WeightTuningFrameworkService can optimize these
+  - **Mitigation**: Use per-field loss weights (w_T1, w_T3, w_Ux, w_Uy) to balance gradients; Phase 1's WeightTuningFrameworkService can optimize these; non-dimensionalization reduces this risk by homogenizing scales
 
 - **Risk 2: Parameter interpolation failure** — Network may not generalize to untrained (pitch, depth) combinations if parameter space coverage insufficient
   - **Mitigation**: Ensure 12 FDTD files span parameter space uniformly; validate on holdout combination (e.g., p=1.625, d=0.15); if R² < 0.7, request additional FDTD data

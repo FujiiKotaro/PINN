@@ -65,6 +65,7 @@ graph TB
         FDTDLoader[FDTDDataLoaderService]
         TensorConv[TensorConverterService]
         ParamNorm[ParameterNormalizer NEW]
+        Scaler[DimensionlessScalerService NEW]
     end
 
     subgraph "Model Layer"
@@ -96,6 +97,8 @@ graph TB
     Config --> FDTDLoader
     FDTDLoader --> TensorConv
     FDTDLoader --> ParamNorm
+    FDTDLoader --> Scaler
+    Scaler --> Builder
     TensorConv --> Builder
     Builder --> PDE
     Builder --> BC
@@ -121,6 +124,7 @@ graph TB
   - `PINNModelBuilder2DService`: 2D geometry(Rectangle)と5D入力(x,y,t,p,d)対応のため1D版から拡張
   - `PDEDefinition2DService`: 2D弾性波方程式(4出力)のPDE residual計算のため新規作成
   - `ParameterNormalizer`: パラメータ(pitch, depth)を[0,1]正規化するユーティリティ
+  - `DimensionlessScalerService`: 損失スケール問題解決のため、全変数を無次元化(過去の実験で損失項が巨大化する問題に対処)
 - **Steering準拠**: "Reference-driven development"原則に従い、Phase 1実装を基準として段階的拡張
 
 ### テクノロジースタック
@@ -245,9 +249,10 @@ flowchart TD
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies (P0/P1) | Contracts |
 |-----------|--------------|--------|--------------|--------------------------|-----------|
 | PINNModelBuilder2DService | Model | 2D geometry + 5D入力PINN構築 | 1.1, 1.2, 1.3, 1.4, 1.5, 3.1, 3.2 | DeepXDE (P0), PDEDefinition2DService (P0) | Service |
-| PDEDefinition2DService | Model | 2D弾性波PDE residual計算 | 1.1, 1.5 | DeepXDE grad (P0) | Service |
+| PDEDefinition2DService | Model | 2D弾性波PDE residual計算(無次元) | 1.1, 1.5 | DeepXDE grad (P0), DimensionlessScalerService (P0) | Service |
+| DimensionlessScalerService | Data | 全変数無次元化・損失スケール正規化 | 全要求(横断的) | NumPy (P0) | Service |
 | ParameterNormalizer | Data | パラメータ正規化 | 3.1, 3.2 | NumPy (P0) | Service |
-| FDTDDataLoaderService | Data | 複数.npzファイル読み込み(拡張) | 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 3.3 | NumPy (P0), ParameterNormalizer (P0) | Service |
+| FDTDDataLoaderService | Data | 複数.npzファイル読み込み(拡張) | 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 3.3 | NumPy (P0), ParameterNormalizer (P0), DimensionlessScalerService (P0) | Service |
 | ErrorMetricsService | Validation | L2/相対誤差 + R²スコア | 4.1, 4.2, 4.3 | NumPy (P0), sklearn (P1) | Service |
 | PlotGeneratorService | Validation | 時系列スナップショット + ヒートマップ | 4.4, 4.6 | Matplotlib (P0) | Service |
 | ValidationCallback | Training | R²計算 + 警告発行 | 3.5, 4.3, 4.5 | ErrorMetricsService (P0) | Event |
@@ -352,19 +357,20 @@ class PINNModelBuilder2DService:
 
 | Field | Detail |
 |-------|--------|
-| Intent | 2D弾性波方程式のPDE residualを計算し、4出力(T1, T3, Ux, Uy)に対するPDE制約を提供 |
+| Intent | 2D弾性波方程式の**無次元**PDE residualを計算し、4出力(T1, T3, Ux, Uy)に対するPDE制約を提供 |
 | Requirements | 1.1, 1.5 |
 
 **Responsibilities & Constraints**
-- 縦波方程式: ∂²Ux/∂t² - (λ+2μ)/ρ (∂²Ux/∂x² + ∂²Ux/∂y²) = 0
-- 横波方程式: ∂²Uy/∂t² - μ/ρ (∂²Uy/∂x² + ∂²Uy/∂y²) = 0
-- 応力-歪み関係: T1 = (λ+2μ)εxx + λεyy、T3 = (λ+2μ)εyy + λεxx
-- 歪み-変位関係: εxx = ∂Ux/∂x、εyy = ∂Uy/∂y
-- DeepXDE `dde.grad.hessian(y, x, i, j)`を用いた2階微分計算
+- **無次元化縦波方程式**: ∂²Ũx/∂t̃² - (∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ²) = 0 (係数O(1))
+- **無次元化横波方程式**: ∂²Ũy/∂t̃² - (c_t/c_l)² (∂²Ũy/∂x̃² + ∂²Ũy/∂ỹ²) = 0 (係数O(1))
+- 応力residual簡略化: T̃1, T̃3のPDE residualは0(FDTDデータ監視に依存)
+- DeepXDE `dde.grad.hessian(y, x, i, j)`を用いた2階微分計算(無次元座標で)
 - Domain boundary: PDE residual計算のみ、BC/IC定義は他Serviceに委譲
+- **損失スケール対策**: 無次元化によりPDE residualがO(1)、data lossと同スケールに
 
 **Dependencies**
 - **Inbound**: PINNModelBuilder2DService — PDE関数取得 (P0)
+- **Inbound**: DimensionlessScalerService — 特性スケール取得(c_l, c_t計算用) (P0)
 - **External**: DeepXDE grad module — Hessian計算 (P0)
 
 **Contracts**: Service [X] / API [ ] / Event [ ] / Batch [ ] / State [ ]
@@ -375,7 +381,7 @@ import deepxde as dde
 import torch
 
 class PDEDefinition2DService:
-    """2D elastic wave equation PDE definition service."""
+    """2D elastic wave equation PDE definition service (non-dimensionalized)."""
 
     @staticmethod
     def create_pde_function(
@@ -383,7 +389,7 @@ class PDEDefinition2DService:
         elastic_mu: float,
         density: float
     ) -> Callable:
-        """Create 2D elastic wave PDE function for DeepXDE.
+        """Create 2D elastic wave PDE function for DeepXDE (dimensionless form).
 
         Args:
             elastic_lambda: Lamé's first parameter (Pa)
@@ -392,9 +398,9 @@ class PDEDefinition2DService:
 
         Returns:
             PDE function with signature (x, y) -> residual
-            where x: (N, 5) input tensor [x, y, t, pitch, depth]
-                  y: (N, 4) output tensor [T1, T3, Ux, Uy]
-                  residual: (N, 4) PDE residual for each output
+            where x: (N, 5) dimensionless input [x̃, ỹ, t̃, pitch_norm, depth_norm]
+                  y: (N, 4) dimensionless output [T̃1, T̃3, Ũx, Ũy]
+                  residual: (N, 4) PDE residual for each output (O(1) scale)
 
         Preconditions:
             - elastic_lambda, elastic_mu, density > 0
@@ -402,59 +408,264 @@ class PDEDefinition2DService:
         Postconditions:
             - Returns callable compatible with dde.data.PDE
             - Residual shape matches output shape (N, 4)
+            - **All PDE coefficients O(1)** (addresses loss scaling problem)
 
         Invariants:
             - PDE residual = 0 at true solution (physics constraint)
         """
+        # Compute wave speeds
+        c_l = ((elastic_lambda + 2*elastic_mu) / density) ** 0.5  # Longitudinal
+        c_t = (elastic_mu / density) ** 0.5  # Transverse
+
+        # Dimensionless wave speed ratio
+        c_ratio = c_t / c_l  # ≈ 0.49 for Aluminum
+
         def pde(x, y):
-            """Compute PDE residual for 2D elastic wave equations.
+            """Compute PDE residual for 2D elastic wave equations (dimensionless).
 
-            x: (N, 5) [x, y, t, pitch, depth]
-            y: (N, 4) [T1, T3, Ux, Uy]
-            Returns: (N, 4) [residual_T1, residual_T3, residual_Ux, residual_Uy]
+            x: (N, 5) [x̃, ỹ, t̃, pitch_norm, depth_norm] (all dimensionless)
+            y: (N, 4) [T̃1, T̃3, Ũx, Ũy] (all dimensionless)
+            Returns: (N, 4) [residual_T̃1, residual_T̃3, residual_Ũx, residual_Ũy]
+
+            Note: Input already normalized by DimensionlessScalerService
             """
-            # Extract outputs
-            T1 = y[:, 0:1]
-            T3 = y[:, 1:2]
-            Ux = y[:, 2:3]
-            Uy = y[:, 3:4]
+            # Extract outputs (already dimensionless)
+            T1_tilde = y[:, 0:1]
+            T3_tilde = y[:, 1:2]
+            Ux_tilde = y[:, 2:3]
+            Uy_tilde = y[:, 3:4]
 
-            # Compute spatial derivatives (Hessian)
-            Ux_xx = dde.grad.hessian(y, x, component=2, i=0, j=0)
-            Ux_yy = dde.grad.hessian(y, x, component=2, i=1, j=1)
-            Uy_xx = dde.grad.hessian(y, x, component=3, i=0, j=0)
-            Uy_yy = dde.grad.hessian(y, x, component=3, i=1, j=1)
+            # Compute spatial derivatives (Hessian) w.r.t. dimensionless coords
+            Ux_xx = dde.grad.hessian(y, x, component=2, i=0, j=0)  # ∂²Ũx/∂x̃²
+            Ux_yy = dde.grad.hessian(y, x, component=2, i=1, j=1)  # ∂²Ũx/∂ỹ²
+            Uy_xx = dde.grad.hessian(y, x, component=3, i=0, j=0)  # ∂²Ũy/∂x̃²
+            Uy_yy = dde.grad.hessian(y, x, component=3, i=1, j=1)  # ∂²Ũy/∂ỹ²
 
-            # Temporal derivatives
-            Ux_tt = dde.grad.hessian(y, x, component=2, i=2, j=2)
-            Uy_tt = dde.grad.hessian(y, x, component=3, i=2, j=2)
+            # Temporal derivatives w.r.t. dimensionless time
+            Ux_tt = dde.grad.hessian(y, x, component=2, i=2, j=2)  # ∂²Ũx/∂t̃²
+            Uy_tt = dde.grad.hessian(y, x, component=3, i=2, j=2)  # ∂²Ũy/∂t̃²
 
-            # PDE residuals
-            c_l = ((elastic_lambda + 2*elastic_mu) / density) ** 0.5
-            c_t = (elastic_mu / density) ** 0.5
+            # Dimensionless PDE residuals (coefficients are O(1))
+            # Longitudinal wave: ∂²Ũx/∂t̃² - (∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ²) = 0
+            # (coefficient = 1 due to T_ref = L_ref/c_l by design)
+            residual_Ux = Ux_tt - (Ux_xx + Ux_yy)
 
-            residual_Ux = Ux_tt - c_l**2 * (Ux_xx + Ux_yy)
-            residual_Uy = Uy_tt - c_t**2 * (Uy_xx + Uy_yy)
+            # Transverse wave: ∂²Ũy/∂t̃² - (c_t/c_l)² (∂²Ũy/∂x̃² + ∂²Ũy/∂ỹ²) = 0
+            # (coefficient ≈ 0.24 for Aluminum, still O(1))
+            residual_Uy = Uy_tt - c_ratio**2 * (Uy_xx + Uy_yy)
 
             # Stress residuals (simplified: assume FDTD data provides stress supervision)
-            residual_T1 = torch.zeros_like(T1)
-            residual_T3 = torch.zeros_like(T3)
+            residual_T1 = torch.zeros_like(T1_tilde)
+            residual_T3 = torch.zeros_like(T3_tilde)
 
             return torch.cat([residual_T1, residual_T3, residual_Ux, residual_Uy], dim=1)
 
         return pde
 ```
 
-- **Preconditions**: 弾性定数が正値(configバリデーションで保証)
-- **Postconditions**: 4次元residualベクトル返却
-- **Invariants**: PDE residualが物理的に正しい解でゼロ
+- **Preconditions**: 弾性定数が正値(configバリデーションで保証)、入力が無次元化済み
+- **Postconditions**: 4次元residualベクトル返却、**residualスケールO(1)**
+- **Invariants**: PDE residualが物理的に正しい解でゼロ、無次元化により係数O(1)
 
 **Implementation Notes**
-- **Integration**: 応力residualは簡略化(residual=0)、FDTDデータ監視損失で補完。完全な応力-変位カップリングは将来拡張。
-- **Validation**: Hessian計算の次元チェック(component index範囲確認)
-- **Risks**: 応力residual省略によりphysics constraint弱化、R²スコアで影響評価
+- **Integration**:
+  - 入力xはDimensionlessScalerServiceで既に無次元化済み(x̃, ỹ, t̃)
+  - 出力yも無次元化済み(T̃1, T̃3, Ũx, Ũy)
+  - PDE係数が自動的にO(1)になり、PDE loss ≈ data lossのスケールに
+  - 応力residualは簡略化(residual=0)、FDTDデータ監視損失で補完
+- **Validation**:
+  - Hessian計算の次元チェック(component index範囲確認)
+  - c_ratio = c_t/c_l ≈ 0.49(Al 6061)がO(1)であることを確認
+  - 訓練初期にPDE loss, data loss, BC lossのオーダーをログ記録し、O(1)であることを検証
+- **Risks**:
+  - 応力residual省略によりphysics constraint弱化 → R²スコアで影響評価
+  - c_ratio選択ミス(μ, λ取り違え) → 単体テストで検証
 
 ### Data Layer
+
+#### DimensionlessScalerService
+
+| Field | Detail |
+|-------|--------|
+| Intent | 損失スケール問題解決のため、全変数(x,y,t,outputs)を特性スケールで無次元化し、PDE係数をO(1)に統一 |
+| Requirements | 全要求(横断的、訓練安定性に影響) |
+| Owner / Reviewers | Data team, Model team |
+
+**Responsibilities & Constraints**
+- 特性スケール定義: L_ref(空間), T_ref(時間), U_ref(変位), σ_ref(応力)をFDTDデータ統計と物理パラメータから決定
+- 入力変数無次元化: (x, y, t) → (x̃, ỹ, t̃) where x̃ = x/L_ref, etc.
+- 出力変数無次元化: (T1, T3, Ux, Uy) → (T̃1, T̃3, Ũx, Ũy) where Ũx = Ux/U_ref, etc.
+- 逆変換提供: 推論結果を物理単位に戻すdenormalize_outputs()
+- Domain boundary: スケーリング変換のみ、データロードはFDTDLoaderに委譲、PDE定義はPDEDefinitionに委譲
+- **過去の問題解決**: Phase 1で観測されたPDE loss >> data loss(桁違い)問題を根本解決
+
+**Dependencies**
+- **Inbound**: FDTDDataLoaderService — データスケーリング要求 (P0)
+- **Inbound**: PDEDefinition2DService — 無次元PDE係数取得 (P0)
+- **Inbound**: PlotGeneratorService — 物理単位への逆変換 (P1)
+- **External**: NumPy — 数値演算 (P0)
+
+**Contracts**: Service [X] / API [ ] / Event [ ] / Batch [ ] / State [ ]
+
+##### Service Interface
+```python
+import numpy as np
+from dataclasses import dataclass
+
+@dataclass
+class CharacteristicScales:
+    """Characteristic scales for non-dimensionalization."""
+    L_ref: float  # Spatial scale (m)
+    T_ref: float  # Temporal scale (s)
+    U_ref: float  # Displacement scale (m)
+    sigma_ref: float  # Stress scale (Pa)
+
+    # Derived quantities
+    velocity_ref: float  # = L_ref / T_ref (m/s)
+
+    @classmethod
+    def from_physics(
+        cls,
+        domain_length: float,
+        elastic_lambda: float,
+        elastic_mu: float,
+        density: float,
+        displacement_amplitude: float = 1e-9
+    ) -> 'CharacteristicScales':
+        """Compute characteristic scales from physics.
+
+        Args:
+            domain_length: Spatial domain size (x_max), m
+            elastic_lambda: Lamé's first parameter, Pa
+            elastic_mu: Shear modulus, Pa
+            density: Material density, kg/m³
+            displacement_amplitude: Typical displacement (from FDTD stats), m
+
+        Returns:
+            CharacteristicScales with derived scales
+        """
+        L_ref = domain_length
+        c_l = np.sqrt((elastic_lambda + 2*elastic_mu) / density)  # Longitudinal wave speed
+        T_ref = L_ref / c_l
+        U_ref = displacement_amplitude
+        sigma_ref = density * c_l**2  # Characteristic impedance
+
+        return cls(
+            L_ref=L_ref,
+            T_ref=T_ref,
+            U_ref=U_ref,
+            sigma_ref=sigma_ref,
+            velocity_ref=c_l
+        )
+
+class DimensionlessScalerService:
+    """Non-dimensionalization service for loss scaling."""
+
+    def __init__(self, scales: CharacteristicScales):
+        """Initialize scaler with characteristic scales.
+
+        Args:
+            scales: Characteristic scales from physics or data
+
+        Preconditions:
+            - All scales > 0
+        """
+        self.scales = scales
+
+    def normalize_inputs(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        t: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Normalize spatial and temporal coordinates.
+
+        Args:
+            x: x-coordinates (N,) in meters
+            y: y-coordinates (N,) in meters
+            t: time coordinates (N,) in seconds
+
+        Returns:
+            (x_tilde, y_tilde, t_tilde) dimensionless coordinates
+
+        Postconditions:
+            - x_tilde = x / L_ref ∈ [0, 1]
+            - y_tilde = y / L_ref ∈ [0, 0.5]
+            - t_tilde = t / T_ref ∈ [0.55, 1.02] for typical domain
+        """
+        x_tilde = x / self.scales.L_ref
+        y_tilde = y / self.scales.L_ref
+        t_tilde = t / self.scales.T_ref
+        return x_tilde, y_tilde, t_tilde
+
+    def normalize_outputs(
+        self,
+        T1: np.ndarray,
+        T3: np.ndarray,
+        Ux: np.ndarray,
+        Uy: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Normalize output fields.
+
+        Args:
+            T1, T3: Stress components (N,) in Pa
+            Ux, Uy: Displacement components (N,) in m
+
+        Returns:
+            (T1_tilde, T3_tilde, Ux_tilde, Uy_tilde) dimensionless
+
+        Postconditions:
+            - T1_tilde, T3_tilde = O(1) (stress scaled by sigma_ref)
+            - Ux_tilde, Uy_tilde = O(1) (displacement scaled by U_ref)
+        """
+        T1_tilde = T1 / self.scales.sigma_ref
+        T3_tilde = T3 / self.scales.sigma_ref
+        Ux_tilde = Ux / self.scales.U_ref
+        Uy_tilde = Uy / self.scales.U_ref
+        return T1_tilde, T3_tilde, Ux_tilde, Uy_tilde
+
+    def denormalize_outputs(
+        self,
+        T1_tilde: np.ndarray,
+        T3_tilde: np.ndarray,
+        Ux_tilde: np.ndarray,
+        Uy_tilde: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Convert dimensionless outputs back to physical units.
+
+        Args:
+            T1_tilde, T3_tilde, Ux_tilde, Uy_tilde: Dimensionless outputs
+
+        Returns:
+            (T1, T3, Ux, Uy) in physical units (Pa, Pa, m, m)
+
+        Postconditions:
+            - Inverse of normalize_outputs
+        """
+        T1 = T1_tilde * self.scales.sigma_ref
+        T3 = T3_tilde * self.scales.sigma_ref
+        Ux = Ux_tilde * self.scales.U_ref
+        Uy = Uy_tilde * self.scales.U_ref
+        return T1, T3, Ux, Uy
+```
+
+- **Preconditions**: 特性スケールが正値、物理的に妥当
+- **Postconditions**: 無次元変数がO(1)範囲、PDE係数がO(1)
+- **Invariants**: normalize → denormalize で元の値復元(数値誤差を除く)
+
+**Implementation Notes**
+- **Integration**:
+  - FDTDDataLoaderServiceでデータ読み込み直後にnormalize_inputs/outputs適用
+  - PDEDefinition2DServiceで無次元PDEを計算(係数が自動的にO(1)になる)
+  - PlotGeneratorServiceで可視化前にdenormalize_outputs適用
+  - 特性スケールはconfig YAMLに記録、再現性保証
+- **Validation**:
+  - U_ref推定: FDTDデータのUx, Uy標準偏差をU_refとして使用(データ駆動)
+  - σ_ref検証: ρ*c_l^2 ≈ 107 GPaがYoung's modulus E ≈ 70 GPaと同オーダーであることを確認
+  - PDE係数確認: 無次元化後の∂²Ũx/∂t̃² - (∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ²)の係数が1であることを検証
+- **Risks**:
+  - U_ref選択の感度: U_refが1桁ずれると変位場の学習が不安定化 → FDTDデータ統計で検証
+  - 複数スケール存在: 縦波c_lと横波c_tで波速異なる → T_ref = L_ref/c_l (速い方)で統一
 
 #### ParameterNormalizer
 
@@ -1189,6 +1400,8 @@ Phase 1の反省(要求6)に基づき、重要機能に絞った簡素化テス�
 
 ### 詳細なPDE Residual式
 
+#### 物理単位系での2D弾性波方程式
+
 2D弾性波方程式(isotropic medium)の完全形式:
 
 **縦波(P-wave)方程式**:
@@ -1217,6 +1430,76 @@ where εxx = ∂Ux/∂x, εyy = ∂Uy/∂y
 - c_l (Longitudinal wave speed): ~6300 m/s
 - c_t (Transverse wave speed): ~3100 m/s
 
+#### 無次元化変換と導出(損失スケール問題対策)
+
+**無次元化の動機**:
+- Phase 1の経験: PDE loss項が10^9オーダー、data loss項が10^0オーダー → 勾配不均衡で訓練不安定
+- 原因: 応力(Pa単位、10^9オーダー)と変位(m単位、10^-9オーダー)のスケール差
+- 解決策: 全変数を特性スケールで無次元化し、PDE係数をO(1)に統一
+
+**特性スケール選定**:
+```
+L_ref = 0.04 m              (空間スケール、ドメインサイズ)
+T_ref = L_ref / c_l         (時間スケール、縦波横断時間)
+      ≈ 0.04 / 6300
+      ≈ 6.35e-6 s
+
+U_ref = 1e-9 m              (変位スケール、FDTDデータ統計から)
+σ_ref = ρ * c_l²            (応力スケール、特性インピーダンス)
+      ≈ 2700 * 6300²
+      ≈ 1.07e11 Pa (107 GPa)
+```
+
+**無次元変数定義**:
+```
+x̃ = x / L_ref,  ỹ = y / L_ref,  t̃ = t / T_ref
+Ũx = Ux / U_ref,  Ũy = Uy / U_ref
+T̃1 = T1 / σ_ref,  T̃3 = T3 / σ_ref
+```
+
+**無次元PDE導出(縦波)**:
+
+元の方程式:
+```
+∂²Ux/∂t² = c_l² (∂²Ux/∂x² + ∂²Ux/∂y²)
+```
+
+無次元変数を代入:
+```
+∂²(U_ref·Ũx)/∂(T_ref·t̃)² = c_l² [∂²(U_ref·Ũx)/∂(L_ref·x̃)² + ∂²(U_ref·Ũx)/∂(L_ref·ỹ)²]
+```
+
+各項を整理:
+```
+左辺: (U_ref/T_ref²) ∂²Ũx/∂t̃²
+右辺: c_l² (U_ref/L_ref²) (∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ²)
+```
+
+両辺を(U_ref/T_ref²)で割る:
+```
+∂²Ũx/∂t̃² = c_l² (T_ref²/L_ref²) (∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ²)
+```
+
+T_ref = L_ref/c_l を代入:
+```
+c_l² (T_ref²/L_ref²) = c_l² · (L_ref/c_l)² / L_ref² = c_l² · 1/c_l² = 1
+```
+
+**無次元縦波方程式**:
+```
+∂²Ũx/∂t̃² = ∂²Ũx/∂x̃² + ∂²Ũx/∂ỹ²     (係数 = 1)
+```
+
+**無次元横波方程式(同様の導出)**:
+```
+∂²Ũy/∂t̃² = (c_t/c_l)² (∂²Ũy/∂x̃² + ∂²Ũy/∂ỹ²)     (係数 ≈ 0.24 for Al)
+```
+
+**損失項のスケール統一**:
+- Data loss: L_data = Σ(ỹ_pred - ỹ_true)² where ỹ ∈ {T̃1, T̃3, Ũx, Ũy} are O(1)
+- PDE loss: L_pde = Σ(PDE_residual)² where residual = O(1) due to dimensionless form
+- **結果**: L_data ≈ L_pde ≈ O(1)、損失重みw_data, w_pde を1.0前後から開始可能
+
 ### 設定ファイル例
 
 ```yaml
@@ -1237,8 +1520,19 @@ domain:
   elastic_mu: 26e9      # Pa
   density: 2700.0       # kg/m³
 
+# Non-dimensionalization scales (addresses loss scaling problem from Phase 1)
+characteristic_scales:
+  L_ref: 0.04          # Spatial scale (m), equals x_max
+  U_ref: 1.0e-9        # Displacement scale (m), 1 nm typical amplitude
+  # T_ref, sigma_ref auto-computed from L_ref and elastic constants
+  # T_ref = L_ref / sqrt((lambda + 2*mu) / rho) ≈ 6.35e-6 s
+  # sigma_ref = rho * (L_ref / T_ref)^2 ≈ 107 GPa
+
+  # Optional: Override U_ref with FDTD data statistics
+  compute_U_ref_from_data: true  # If true, use std(Ux, Uy) from FDTD
+
 network:
-  layer_sizes: [5, 64, 64, 64, 4]  # 5D input (x,y,t,p,d) → 4D output (T1,T3,Ux,Uy)
+  layer_sizes: [5, 64, 64, 64, 4]  # 5D input (x̃,ỹ,t̃,p,d) → 4D output (T̃1,T̃3,Ũx,Ũy)
   activation: "tanh"
 
 training:
@@ -1246,9 +1540,9 @@ training:
   learning_rate: 0.001
   optimizer: "adam"
   loss_weights:
-    data: 1.0
-    pde: 1.0
-    bc: 0.0  # No explicit BC (rely on FDTD data)
+    data: 1.0    # Can start near 1.0 due to non-dimensionalization
+    pde: 1.0     # PDE loss now O(1), no longer >> data loss
+    bc: 0.0      # No explicit BC (rely on FDTD data)
   amp_enabled: true
   checkpoint_interval: 1000
 
