@@ -195,7 +195,7 @@ class TestTask2DataPreparation:
 
 
 class TestNotebookExecution:
-    """Test notebook execution (currently expected to pass setup cell only)."""
+    """Test notebook execution (Task 9.1: Requirement 7.5)."""
 
     @pytest.mark.slow
     def test_setup_cell_executes(self, notebook_path, tmp_path):
@@ -214,3 +214,135 @@ class TestNotebookExecution:
             ep.preprocess(test_nb, {"metadata": {"path": str(tmp_path)}})
         except Exception as e:
             pytest.fail(f"Setup cell execution failed: {e}")
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_notebook_executes_without_errors(self, notebook_path, tmp_path):
+        """
+        Test that entire notebook executes without errors (Task 9.1).
+
+        This is a full integration test that executes all cells sequentially.
+        Note: This test requires PINN_data/ with valid .npz files and GPU.
+        """
+        import os
+
+        # Check if PINN_data directory exists
+        pinn_data_dir = Path(__file__).parent.parent / "PINN_data"
+        if not pinn_data_dir.exists():
+            pytest.skip(f"Skipping integration test: {pinn_data_dir} not found")
+
+        with open(notebook_path) as f:
+            nb = nbformat.read(f, as_version=4)
+
+        # Set PYTHONPATH to include project root
+        old_pythonpath = os.environ.get("PYTHONPATH", "")
+        project_root = str(Path(__file__).parent.parent)
+        os.environ["PYTHONPATH"] = f"{project_root}:{old_pythonpath}"
+
+        # ExecutePreprocessor with extended timeout for training (30 minutes)
+        ep = ExecutePreprocessor(timeout=1800, kernel_name="python3")
+
+        # Execute notebook from notebooks directory so Path.cwd() is correct
+        notebooks_dir = notebook_path.parent
+
+        try:
+            # Execute all cells (use notebooks directory as working directory)
+            nb_executed, resources = ep.preprocess(nb, {"metadata": {"path": str(notebooks_dir)}})
+
+            # Verify execution completed
+            assert nb_executed is not None, "Notebook execution returned None"
+
+            # Check for errors in cell outputs
+            for i, cell in enumerate(nb_executed.cells):
+                if cell.cell_type == "code":
+                    for output in cell.get("outputs", []):
+                        if output.get("output_type") == "error":
+                            error_msg = "\n".join(output.get("traceback", []))
+                            pytest.fail(f"Cell {i} produced error:\n{error_msg}")
+
+        except Exception as e:
+            pytest.fail(f"Notebook execution failed: {e}")
+        finally:
+            # Restore PYTHONPATH
+            os.environ["PYTHONPATH"] = old_pythonpath
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_notebook_final_kernel_state(self, notebook_path, tmp_path):
+        """
+        Test that final kernel state contains expected variables (Task 9.1).
+
+        Validates that key variables exist after notebook execution:
+        - r2_scores: R² scores dictionary
+        - trained_model: Trained PINN model
+        - dataset: Full dataset
+        - train_data, val_data: Train/val split data
+        """
+        import os
+
+        # Check if PINN_data directory exists
+        pinn_data_dir = Path(__file__).parent.parent / "PINN_data"
+        if not pinn_data_dir.exists():
+            pytest.skip(f"Skipping integration test: {pinn_data_dir} not found")
+
+        with open(notebook_path) as f:
+            nb = nbformat.read(f, as_version=4)
+
+        # Set PYTHONPATH to include project root
+        old_pythonpath = os.environ.get("PYTHONPATH", "")
+        project_root = str(Path(__file__).parent.parent)
+        os.environ["PYTHONPATH"] = f"{project_root}:{old_pythonpath}"
+
+        ep = ExecutePreprocessor(timeout=1800, kernel_name="python3")
+
+        # Execute notebook from notebooks directory so Path.cwd() is correct
+        notebooks_dir = notebook_path.parent
+
+        try:
+            nb_executed, resources = ep.preprocess(nb, {"metadata": {"path": str(notebooks_dir)}})
+
+            # Add a verification cell to check kernel state
+            verification_code = """
+# Verify key variables exist
+required_vars = ['r2_scores', 'trained_model', 'dataset', 'train_data', 'val_data',
+                 'fdtd_data_2d', 'pinn_pred_2d', 'mean_error', 'rel_error']
+
+missing_vars = []
+for var_name in required_vars:
+    if var_name not in dir():
+        missing_vars.append(var_name)
+
+if missing_vars:
+    raise AssertionError(f"Missing variables in kernel state: {missing_vars}")
+
+# Verify r2_scores has correct structure
+assert isinstance(r2_scores, dict), "r2_scores should be dict"
+assert len(r2_scores) == 4, f"r2_scores should have 4 fields, got {len(r2_scores)}"
+assert all(field in r2_scores for field in ['T1', 'T3', 'Ux', 'Uy']), "r2_scores missing fields"
+
+print("✓ All required variables present in kernel state")
+print(f"✓ R² scores: {r2_scores}")
+"""
+
+            # Execute verification code in same kernel
+            verification_cell = nbformat.v4.new_code_cell(source=verification_code)
+            nb_executed.cells.append(verification_cell)
+
+            ep_verify = ExecutePreprocessor(timeout=60, kernel_name="python3")
+            nb_final, _ = ep_verify.preprocess(nb_executed, {"metadata": {"path": str(notebooks_dir)}})
+
+            # Check verification cell output
+            last_cell = nb_final.cells[-1]
+            assert last_cell.cell_type == "code"
+
+            # Verify no errors in verification cell
+            for output in last_cell.get("outputs", []):
+                if output.get("output_type") == "error":
+                    error_msg = "\n".join(output.get("traceback", []))
+                    pytest.fail(f"Kernel state verification failed:\n{error_msg}")
+
+        except Exception as e:
+            pytest.fail(f"Kernel state verification failed: {e}")
+        finally:
+            # Restore PYTHONPATH
+            os.environ["PYTHONPATH"] = old_pythonpath
