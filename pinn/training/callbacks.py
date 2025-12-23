@@ -386,3 +386,137 @@ class DivergenceDetectionCallback:
     def on_train_end(self) -> None:
         """Callback executed at the end of training."""
         pass
+
+
+class R2ValidationCallback:
+    """Compute R² scores during training for 2D PINN validation (Task 4.2).
+
+    This callback computes R² (coefficient of determination) for each output field
+    (T1, T3, Ux, Uy) at regular intervals during training. Warns if R² falls below
+    a configurable threshold.
+    """
+
+    def __init__(
+        self,
+        val_x: np.ndarray,
+        val_y: np.ndarray,
+        r2_threshold: float = 0.9,
+        log_interval: int = 1000
+    ):
+        """Initialize R² validation callback.
+
+        Args:
+            val_x: Validation input data (N_val, 5) [x, y, t, pitch_norm, depth_norm]
+            val_y: Validation output data (N_val, 4) [T1, T3, Ux, Uy]
+            r2_threshold: R² threshold for warnings (default: 0.9)
+            log_interval: Number of epochs between R² computation (default: 1000)
+
+        Preconditions:
+            - val_x.shape[1] == 5 (5D input)
+            - val_y.shape[1] == 4 (4 outputs: T1, T3, Ux, Uy)
+            - val_x.shape[0] == val_y.shape[0] (same number of samples)
+            - r2_threshold in (0, 1)
+            - log_interval > 0
+
+        Example:
+            >>> callback = R2ValidationCallback(val_x, val_y, r2_threshold=0.9)
+            >>> callback.set_model(model)
+            >>> callback.on_epoch_end()  # Computes R² at intervals
+        """
+        self.val_x = val_x
+        self.val_y = val_y
+        self.r2_threshold = r2_threshold
+        self.log_interval = log_interval
+
+        # Import R2ScoreCalculator
+        from pinn.validation.r2_score import R2ScoreCalculator
+        self.r2_calculator = R2ScoreCalculator()
+
+        # History tracking
+        self.r2_history = []
+
+        # Model reference (set by DeepXDE)
+        self.model = None
+
+        # Field names
+        self.field_names = ['T1', 'T3', 'Ux', 'Uy']
+
+    def set_model(self, model: Any) -> None:
+        """Set the model for this callback (required by DeepXDE).
+
+        Args:
+            model: DeepXDE Model instance
+        """
+        self.model = model
+
+    def on_train_begin(self) -> None:
+        """Callback executed at the beginning of training."""
+        pass
+
+    def on_epoch_begin(self) -> None:
+        """Callback executed at the beginning of each epoch."""
+        pass
+
+    def on_batch_begin(self) -> None:
+        """Callback executed at the beginning of each batch."""
+        pass
+
+    def on_batch_end(self) -> None:
+        """Callback executed at the end of each batch."""
+        pass
+
+    def on_epoch_end(self) -> None:
+        """Callback executed at the end of each epoch.
+
+        Computes R² scores if current epoch is a multiple of log_interval.
+        Emits warnings for fields with R² < r2_threshold.
+        """
+        epoch = self.model.train_state.epoch
+
+        # Only compute R² at specified intervals
+        if epoch % self.log_interval != 0:
+            return
+
+        # Get predictions on validation set
+        y_pred = self.model.predict(self.val_x)
+
+        # Compute R² for each output field
+        r2_scores = {}
+        for i, field_name in enumerate(self.field_names):
+            y_true_field = self.val_y[:, i]
+            y_pred_field = y_pred[:, i]
+            r2 = self.r2_calculator.compute_r2(y_true_field, y_pred_field)
+            r2_scores[field_name] = r2
+
+        # Store in history
+        self.r2_history.append({
+            'epoch': epoch,
+            'scores': r2_scores
+        })
+
+        # Print R² scores
+        print(f"\nEpoch {epoch} | R² Validation Scores:")
+        for field_name, r2 in r2_scores.items():
+            print(f"  {field_name}: R² = {r2:.4f}")
+
+        # Check threshold and emit warnings
+        low_scoring_fields = [
+            (field, r2) for field, r2 in r2_scores.items()
+            if r2 < self.r2_threshold
+        ]
+
+        if low_scoring_fields:
+            print(f"\nWARNING: Low R² scores detected (threshold={self.r2_threshold}):")
+            for field_name, r2 in low_scoring_fields:
+                print(f"  - {field_name}: R² = {r2:.4f}")
+            print("\nRecommendation: Consider tuning hyperparameters:")
+            print("  - Adjust loss weights (w_data, w_pde)")
+            print("  - Modify learning rate")
+            print("  - Increase training epochs")
+            print("  - Adjust network architecture (layer_sizes)")
+        else:
+            print(f"✓ All fields meet quality threshold (R² >= {self.r2_threshold})\n")
+
+    def on_train_end(self) -> None:
+        """Callback executed at the end of training."""
+        pass

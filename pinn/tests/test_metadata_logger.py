@@ -220,3 +220,100 @@ class TestMetadataLogger:
         assert loaded_metadata["seed"] == 123
         assert loaded_metadata["experiment_name"] == "integration_test"
         assert "python_version" in loaded_metadata
+
+
+class TestMetadataLoggerExtensions:
+    """Test Task 8.2: FDTD metadata extensions."""
+
+    def test_capture_fdtd_files(self) -> None:
+        """MetadataLogger should capture FDTD file list."""
+        from pathlib import Path
+        logger = MetadataLogger()
+
+        fdtd_files = [Path("p1250_d100.npz"), Path("p1500_d150.npz")]
+        metadata = logger.capture_fdtd_metadata(fdtd_files)
+
+        assert "fdtd_files" in metadata
+        assert len(metadata["fdtd_files"]) == 2
+        assert "p1250_d100.npz" in metadata["fdtd_files"]
+        assert "p1500_d150.npz" in metadata["fdtd_files"]
+
+    def test_capture_parameter_ranges(self) -> None:
+        """MetadataLogger should capture parameter ranges (pitch, depth)."""
+        logger = MetadataLogger()
+
+        pitch_values = [1.25e-3, 1.5e-3, 1.75e-3, 2.0e-3]
+        depth_values = [0.1e-3, 0.15e-3, 0.2e-3]
+
+        metadata = logger.capture_fdtd_metadata(
+            fdtd_files=[],
+            pitch_range=(min(pitch_values), max(pitch_values)),
+            depth_range=(min(depth_values), max(depth_values))
+        )
+
+        assert "parameter_ranges" in metadata
+        assert "pitch" in metadata["parameter_ranges"]
+        assert "depth" in metadata["parameter_ranges"]
+
+        assert metadata["parameter_ranges"]["pitch"]["min"] == 1.25e-3
+        assert metadata["parameter_ranges"]["pitch"]["max"] == 2.0e-3
+        assert metadata["parameter_ranges"]["depth"]["min"] == 0.1e-3
+        assert metadata["parameter_ranges"]["depth"]["max"] == 0.2e-3
+
+    def test_capture_characteristic_scales(self) -> None:
+        """MetadataLogger should capture characteristic scales (L_ref, T_ref, U_ref, σ_ref)."""
+        logger = MetadataLogger()
+
+        from pinn.data.dimensionless_scaler import CharacteristicScales
+
+        scales = CharacteristicScales(
+            L_ref=0.04,
+            T_ref=6.78e-6,
+            U_ref=1.5e-9,
+            sigma_ref=1.0e9,
+            velocity_ref=5900.0
+        )
+
+        metadata = logger.capture_fdtd_metadata(
+            fdtd_files=[],
+            characteristic_scales=scales
+        )
+
+        assert "characteristic_scales" in metadata
+        assert metadata["characteristic_scales"]["L_ref"] == 0.04
+        assert metadata["characteristic_scales"]["T_ref"] == 6.78e-6
+        assert metadata["characteristic_scales"]["U_ref"] == 1.5e-9
+        assert metadata["characteristic_scales"]["sigma_ref"] == 1.0e9
+        assert metadata["characteristic_scales"]["velocity_ref"] == 5900.0
+
+    def test_capture_complete_fdtd_metadata(self) -> None:
+        """Integration test: capture all FDTD metadata together."""
+        from pathlib import Path
+        from pinn.data.dimensionless_scaler import CharacteristicScales
+
+        logger = MetadataLogger()
+
+        fdtd_files = [Path("p1250_d100.npz"), Path("p1500_d150.npz")]
+        scales = CharacteristicScales(
+            L_ref=0.04,
+            T_ref=6.78e-6,
+            U_ref=1.5e-9,
+            sigma_ref=1.0e9,
+            velocity_ref=5900.0
+        )
+
+        metadata = logger.capture_fdtd_metadata(
+            fdtd_files=fdtd_files,
+            pitch_range=(1.25e-3, 2.0e-3),
+            depth_range=(0.1e-3, 0.3e-3),
+            characteristic_scales=scales
+        )
+
+        # Verify all components present
+        assert "fdtd_files" in metadata
+        assert "parameter_ranges" in metadata
+        assert "characteristic_scales" in metadata
+
+        assert len(metadata["fdtd_files"]) == 2
+        assert metadata["parameter_ranges"]["pitch"]["min"] == 1.25e-3
+        assert metadata["characteristic_scales"]["L_ref"] == 0.04

@@ -118,3 +118,68 @@ class MetadataLogger:
         # Compute SHA256 hash
         hash_obj = hashlib.sha256(config_bytes)
         return hash_obj.hexdigest()
+
+    def capture_fdtd_metadata(
+        self,
+        fdtd_files: list[Path],
+        pitch_range: tuple[float, float] | None = None,
+        depth_range: tuple[float, float] | None = None,
+        characteristic_scales: Any | None = None
+    ) -> dict[str, Any]:
+        """Capture FDTD-specific metadata for 2D PINN experiments (Task 8.2).
+
+        Args:
+            fdtd_files: List of FDTD .npz file paths
+            pitch_range: Optional tuple of (min_pitch, max_pitch) in meters
+            depth_range: Optional tuple of (min_depth, max_depth) in meters
+            characteristic_scales: Optional CharacteristicScales object
+
+        Returns:
+            Dictionary containing:
+                - fdtd_files: List of filenames
+                - parameter_ranges: Dict with pitch and depth min/max (if provided)
+                - characteristic_scales: Dict with L_ref, T_ref, U_ref, σ_ref (if provided)
+
+        Example:
+            >>> from pathlib import Path
+            >>> from pinn.data.dimensionless_scaler import CharacteristicScales
+            >>> logger = MetadataLogger()
+            >>> files = [Path("p1250_d100.npz"), Path("p1500_d150.npz")]
+            >>> scales = CharacteristicScales(L_ref=0.04, T_ref=6.78e-6, ...)
+            >>> metadata = logger.capture_fdtd_metadata(
+            ...     files, pitch_range=(1.25e-3, 2.0e-3),
+            ...     depth_range=(0.1e-3, 0.3e-3), characteristic_scales=scales
+            ... )
+        """
+        metadata = {}
+
+        # Record FDTD files
+        metadata["fdtd_files"] = [f.name for f in fdtd_files]
+
+        # Record parameter ranges if provided
+        if pitch_range is not None or depth_range is not None:
+            metadata["parameter_ranges"] = {}
+
+            if pitch_range is not None:
+                metadata["parameter_ranges"]["pitch"] = {
+                    "min": pitch_range[0],
+                    "max": pitch_range[1]
+                }
+
+            if depth_range is not None:
+                metadata["parameter_ranges"]["depth"] = {
+                    "min": depth_range[0],
+                    "max": depth_range[1]
+                }
+
+        # Record characteristic scales if provided
+        if characteristic_scales is not None:
+            metadata["characteristic_scales"] = {
+                "L_ref": characteristic_scales.L_ref,
+                "T_ref": characteristic_scales.T_ref,
+                "U_ref": characteristic_scales.U_ref,
+                "sigma_ref": characteristic_scales.sigma_ref,
+                "velocity_ref": characteristic_scales.velocity_ref
+            }
+
+        return metadata

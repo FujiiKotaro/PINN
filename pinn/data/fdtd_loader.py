@@ -280,7 +280,9 @@ class FDTDDataLoaderService:
         self,
         file_paths: list[Path],
         pitch_range: tuple[float, float] | None = None,
-        depth_range: tuple[float, float] | None = None
+        depth_range: tuple[float, float] | None = None,
+        apply_dimensionless: bool = False,
+        scaler: 'DimensionlessScalerService | None' = None
     ) -> FDTDDataset2D:
         """Load and concatenate multiple .npz files into parametric dataset.
 
@@ -290,31 +292,47 @@ class FDTDDataLoaderService:
                         Default: (1.25e-3, 2.0e-3)
             depth_range: Optional (min, max) depth filter in meters
                         Default: (0.1e-3, 0.3e-3)
+            apply_dimensionless: If True, apply dimensionless scaling to coordinates
+                                and wave fields (default: False)
+            scaler: DimensionlessScalerService for scaling (required if apply_dimensionless=True)
 
         Returns:
             FDTDDataset2D with concatenated data from all files
+            If apply_dimensionless=True, all coordinates and fields are O(1) scale
 
         Raises:
-            ValueError: If file_paths is empty
+            ValueError: If file_paths is empty, or if apply_dimensionless=True but scaler=None
             FileNotFoundError: If any file doesn't exist
 
         Preconditions:
             - All files must exist and have valid .npz format
             - file_paths must not be empty
+            - If apply_dimensionless=True, scaler must be provided
 
         Postconditions:
             - Returns dataset with N_total samples (sum of all files)
             - pitch_norm, depth_norm in [0, 1] range
             - Parameters replicated for each spatiotemporal point
+            - If apply_dimensionless=True: x, y, t, T1, T3, Ux, Uy are O(1) scale
 
         Example:
             >>> loader = FDTDDataLoaderService()
             >>> files = [Path("p1250_d100.npz"), Path("p1500_d200.npz")]
             >>> dataset = loader.load_multiple_files(files)
             >>> dataset.x.shape  # (N_total,)
+
+            >>> # With dimensionless scaling
+            >>> from pinn.data.dimensionless_scaler import CharacteristicScales, DimensionlessScalerService
+            >>> scales = CharacteristicScales.from_physics(...)
+            >>> scaler = DimensionlessScalerService(scales)
+            >>> dataset = loader.load_multiple_files(files, apply_dimensionless=True, scaler=scaler)
         """
         if not file_paths:
             raise ValueError("No files provided")
+
+        # Validate dimensionless scaling requirements
+        if apply_dimensionless and scaler is None:
+            raise ValueError("scaler must be provided when apply_dimensionless=True")
 
         # Use default ranges if not specified
         if pitch_range is None:
@@ -396,16 +414,37 @@ class FDTDDataLoaderService:
             all_Uy.append(data.Uy)
 
         # Concatenate all arrays
+        x_concat = np.concatenate(all_x)
+        y_concat = np.concatenate(all_y)
+        t_concat = np.concatenate(all_t)
+        T1_concat = np.concatenate(all_T1)
+        T3_concat = np.concatenate(all_T3)
+        Ux_concat = np.concatenate(all_Ux)
+        Uy_concat = np.concatenate(all_Uy)
+
+        # Apply dimensionless scaling if requested
+        if apply_dimensionless:
+            # Normalize spatiotemporal coordinates
+            x_concat, y_concat, t_concat = scaler.normalize_inputs(
+                x_concat, y_concat, t_concat
+            )
+
+            # Normalize wave fields
+            T1_concat, T3_concat, Ux_concat, Uy_concat = scaler.normalize_outputs(
+                T1_concat, T3_concat, Ux_concat, Uy_concat
+            )
+
+        # Create dataset
         dataset = FDTDDataset2D(
-            x=np.concatenate(all_x),
-            y=np.concatenate(all_y),
-            t=np.concatenate(all_t),
+            x=x_concat,
+            y=y_concat,
+            t=t_concat,
             pitch_norm=np.concatenate(all_pitch_norm),
             depth_norm=np.concatenate(all_depth_norm),
-            T1=np.concatenate(all_T1),
-            T3=np.concatenate(all_T3),
-            Ux=np.concatenate(all_Ux),
-            Uy=np.concatenate(all_Uy),
+            T1=T1_concat,
+            T3=T3_concat,
+            Ux=Ux_concat,
+            Uy=Uy_concat,
             metadata={
                 'files': metadata_files,
                 'params': metadata_params

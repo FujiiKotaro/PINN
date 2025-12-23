@@ -1,0 +1,106 @@
+# 2D Elastic Wave PINN Configuration (Task 8.1)
+# This configuration provides complete setup for 2D PINN elastic wave simulation
+# with FDTD data supervision and parametric learning across crack geometries.
+#
+# Model: 5D input (x, y, t, pitch, depth) → 4D output (T1, T3, Ux, Uy)
+# Features: Dimensionless scaling, R² monitoring, visualization
+
+experiment_name: "2d_elastic_wave_pinn"
+
+# Random seed for reproducibility
+seed: 42
+
+# Spatiotemporal domain configuration
+domain:
+  # Spatial domain (2D Rectangle): [0, 40mm] × [0, 20mm]
+  x_min: 0.0
+  x_max: 0.04  # 40mm in meters
+  y_min: 0.0
+  y_max: 0.02  # 20mm in meters
+
+  # Temporal domain: [3.5μs, 10.0μs]
+  t_min: 3.5e-6  # seconds
+  t_max: 10.0e-6  # seconds
+
+  # Elastic material constants (Aluminum 6061-T6)
+  elastic_lambda: 51.2e9  # Lamé's first parameter (Pa)
+  elastic_mu: 26.1e9      # Shear modulus (Pa)
+  density: 2700.0         # kg/m³
+
+# Characteristic scales for dimensionless normalization (Task 8.1)
+characteristic_scales:
+  # Length scale (domain length)
+  L_ref: 0.04  # meters (= x_max)
+
+  # Displacement amplitude scale (computed from FDTD data if not specified)
+  # If set to null or omitted, will be estimated as std(Ux, Uy) from first FDTD file
+  U_ref: null  # Will be auto-computed from data
+
+  # Auto-compute U_ref from FDTD data (recommended)
+  compute_U_ref_from_data: true
+
+  # Note: T_ref (time scale) and σ_ref (stress scale) are derived from:
+  #   c_l = sqrt((λ + 2μ) / ρ)  # Longitudinal wave speed
+  #   T_ref = L_ref / c_l
+  #   σ_ref = (λ + 2μ) * U_ref / L_ref
+
+# Boundary conditions (2D PINN uses FDTD data supervision, dummy BC for config validation)
+boundary_conditions:
+  type: "dirichlet"  # Dummy BC (not used in 2D PINN)
+
+# Neural network architecture
+network:
+  # Layer sizes: [input_dim, hidden1, hidden2, hidden3, output_dim]
+  # For 2D parametric: input = (x, y, t, pitch, depth) → 5 dims
+  #                    output = (T1, T3, Ux, Uy) → 4 dims
+  layer_sizes: [5, 64, 64, 64, 4]
+
+  # Activation function: "tanh" recommended for smooth PDE derivatives
+  activation: "tanh"
+
+# Training hyperparameters
+training:
+  # Number of training iterations (DeepXDE uses iterations not epochs)
+  iterations: 20000
+
+  # Learning rate for optimizer
+  learning_rate: 0.001
+
+  # Optimizer: "adam" or "L-BFGS"
+  optimizer: "adam"
+
+  # Loss function weights (dimensionless formulation: all O(1))
+  loss_weights:
+    pde: 1.0    # Weight for PDE residual loss (dimensionless)
+    data: 1.0   # Weight for FDTD data fitting loss
+
+  # Number of collocation points for PDE residual
+  num_domain: 10000
+
+  # Train/validation split ratio
+  train_ratio: 0.8
+
+  # Use training data as validation (for overfitting monitoring)
+  validation_equals_train: true
+
+  # Enable automatic mixed precision for GPU memory efficiency
+  amp_enabled: false
+
+  # Checkpoint save interval (iterations)
+  checkpoint_interval: 1000
+
+# R² score monitoring
+validation:
+  # R² score threshold for quality assessment
+  r2_threshold: 0.9
+
+  # Compute R² every N iterations
+  r2_interval: 1000
+
+# Visualization settings
+visualization:
+  # Number of time snapshots for visualization
+  num_time_snapshots: 3
+
+  # Output fields to visualize
+  output_fields: ["T1", "T3", "Ux", "Uy"]
