@@ -47,16 +47,10 @@ Examples:
     )
     parser.add_argument("config_file", type=str, help="Path to YAML configuration file")
     parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="experiments",
-        help="Base directory for experiment outputs (default: experiments/)"
+        "--output-dir", type=str, default="experiments", help="Base directory for experiment outputs (default: experiments/)"
     )
     parser.add_argument(
-        "--data-dir",
-        type=str,
-        default="/PINN_data",
-        help="Directory containing FDTD .npz files (default: /PINN_data)"
+        "--data-dir", type=str, default="/PINN_data", help="Directory containing FDTD .npz files (default: /PINN_data)"
     )
 
     args = parser.parse_args()
@@ -110,19 +104,16 @@ Examples:
 
         # Load elastic constants from config file (raw dict access for now)
         import yaml
+
         with open(config_path) as f:
             config_dict = yaml.safe_load(f)
 
-        elastic_lambda = float(config_dict['domain']['elastic_lambda'])
-        elastic_mu = float(config_dict['domain']['elastic_mu'])
-        density = float(config_dict['domain']['density'])
+        elastic_lambda = float(config_dict["domain"]["elastic_lambda"])
+        elastic_mu = float(config_dict["domain"]["elastic_mu"])
+        density = float(config_dict["domain"]["density"])
 
         # Store elastic constants for later use
-        elastic_constants = {
-            'lambda': elastic_lambda,
-            'mu': elastic_mu,
-            'density': density
-        }
+        elastic_constants = {"lambda": elastic_lambda, "mu": elastic_mu, "density": density}
 
         print(f"Elastic constants:")
         print(f"  λ = {elastic_lambda:.2e} Pa")
@@ -136,7 +127,7 @@ Examples:
             elastic_lambda=elastic_lambda,
             elastic_mu=elastic_mu,
             density=density,
-            displacement_amplitude=U_ref
+            displacement_amplitude=U_ref,
         )
 
         scaler = DimensionlessScalerService(scales)
@@ -152,11 +143,7 @@ Examples:
         print("STEP 3: Loading and Normalizing FDTD Data")
         print("=" * 60)
 
-        dataset = loader.load_multiple_files(
-            npz_files,
-            apply_dimensionless=True,
-            scaler=scaler
-        )
+        dataset = loader.load_multiple_files(npz_files, apply_dimensionless=True, scaler=scaler)
 
         print(f"✓ Loaded {len(dataset.x)} samples from {len(dataset.metadata['files'])} files")
         print(f"Data ranges (dimensionless):")
@@ -171,14 +158,11 @@ Examples:
         print("STEP 4: Train/Validation Split")
         print("=" * 60)
 
-        train_ratio = config_dict['training'].get("train_ratio", 0.8)
-        validation_equals_train = config_dict['training'].get("validation_equals_train", False)
+        train_ratio = config_dict["training"].get("train_ratio", 0.8)
+        validation_equals_train = config_dict["training"].get("validation_equals_train", False)
 
         train_data, val_data = loader.train_val_split(
-            dataset,
-            train_ratio=train_ratio,
-            seed=config.seed,
-            validation_equals_train=validation_equals_train
+            dataset, train_ratio=train_ratio, seed=config.seed, validation_equals_train=validation_equals_train
         )
 
         print(f"Train samples: {len(train_data.x)}")
@@ -195,13 +179,17 @@ Examples:
         # in config.domain, but DomainConfig doesn't have those fields yet.
         # For now, we'll skip model building and print configuration.
         print("Model configuration:")
-        print(f"  Geometry: 2D Rectangle [{config.domain.x_min}, {config.domain.x_max}] × "
-              f"[{config_dict['domain']['y_min']}, {config_dict['domain']['y_max']}]")
+        print(
+            f"  Geometry: 2D Rectangle [{config.domain.x_min}, {config.domain.x_max}] × "
+            f"[{config_dict['domain']['y_min']}, {config_dict['domain']['y_max']}]"
+        )
         print(f"  Time: [{config.domain.t_min:.2e}, {config.domain.t_max:.2e}]")
         print(f"  Network: {config.network.layer_sizes}")
         print(f"  Activation: {config.network.activation}")
-        print(f"  Elastic constants: λ={elastic_constants['lambda']:.2e}, "
-              f"μ={elastic_constants['mu']:.2e}, ρ={elastic_constants['density']:.1f}")
+        print(
+            f"  Elastic constants: λ={elastic_constants['lambda']:.2e}, "
+            f"μ={elastic_constants['mu']:.2e}, ρ={elastic_constants['density']:.1f}"
+        )
 
         # TODO: Extend DomainConfig to include elastic constants, then call:
         # builder = PINNModelBuilder2DService()
@@ -230,6 +218,7 @@ Examples:
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
