@@ -67,39 +67,37 @@ class PINNModelBuilder2DService:
             "Glorot normal"  # Weight initialization
         )
 
-    def _create_geometry(self, domain: DomainConfig) -> dde.geometry.GeometryXTime:
+    def _get_attr(self, obj, key, default=None):
+        """Helper to get attribute or dict item."""
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    def _create_geometry(self, domain) -> dde.geometry.GeometryXTime:
         """Create 2D Rectangle + TimeDomain spatiotemporal geometry.
 
         Args:
-            domain: Domain configuration with spatial (x, y) and temporal bounds
+            domain: Domain configuration (DomainConfig object or dict)
 
         Returns:
             DeepXDE GeometryXTime object for 3D (x, y, t) domain
-
-        Preconditions:
-            - domain.x_min < domain.x_max
-            - domain.y_min < domain.y_max
-            - domain.t_min < domain.t_max
-
-        Postconditions:
-            - Returns GeometryXTime with dim=3 (x, y, t)
-            - Spatial domain is 2D Rectangle
-            - Temporal domain is TimeDomain
-
-        Example:
-            >>> domain = DomainConfig(x_min=0, x_max=0.04, y_min=0, y_max=0.02,
-            ...                       t_min=3.5e-6, t_max=6.5e-6)
-            >>> geomtime = builder._create_geometry(domain)
-            >>> geomtime.dim  # Returns 3 (x, y, t)
         """
+        # Extract bounds handling both object and dict
+        x_min = self._get_attr(domain, "x_min")
+        x_max = self._get_attr(domain, "x_max")
+        y_min = self._get_attr(domain, "y_min")
+        y_max = self._get_attr(domain, "y_max")
+        t_min = self._get_attr(domain, "t_min")
+        t_max = self._get_attr(domain, "t_max")
+
         # Create 2D spatial domain (Rectangle)
         spatial_geom = dde.geometry.Rectangle(
-            [domain.x_min, domain.y_min],
-            [domain.x_max, domain.y_max]
+            [x_min, y_min],
+            [x_max, y_max]
         )
 
         # Create temporal domain
-        timedomain = dde.geometry.TimeDomain(domain.t_min, domain.t_max)
+        timedomain = dde.geometry.TimeDomain(t_min, t_max)
 
         # Combine into spatiotemporal geometry
         geomtime = dde.geometry.GeometryXTime(spatial_geom, timedomain)
@@ -108,81 +106,84 @@ class PINNModelBuilder2DService:
 
     def build_model(
         self,
-        config: ExperimentConfig,
+        config,
         compile_model: bool = True
     ) -> dde.Model:
         """Construct 2D parametric PINN model from configuration.
 
         Args:
-            config: Validated experiment configuration with domain, network, elastic constants
+            config: Validated experiment configuration (ExperimentConfig object or dict)
             compile_model: If True, compile model with optimizer (default: True)
 
         Returns:
             Compiled dde.Model ready for training
-
-        Preconditions:
-            - config.domain defines valid 2D Rectangle bounds
-            - config.domain.elastic_lambda, elastic_mu, density > 0
-            - config.network.layer_sizes = [5, ..., 4]
-
-        Postconditions:
-            - Returns compiled DeepXDE Model with 2D PDE constraints
-            - Model ready for training via TrainingPipelineService
-
-        Invariants:
-            - Geometry spatial bounds match config.domain
-            - Network input/output dimensions match 5D/4D specification
-
-        Example:
-            >>> config = ExperimentConfig(...)
-            >>> builder = PINNModelBuilder2DService()
-            >>> model = builder.build_model(config)
-            >>> # Train with FDTD data
         """
-        # Create spatiotemporal geometry (2D Rectangle + Time)
-        geomtime = self._create_geometry(config.domain)
+        # Extract components handling both object and dict
+        domain = self._get_attr(config, "domain")
+        network = self._get_attr(config, "network")
+        training = self._get_attr(config, "training")
+
+        # Create spatiotemporal geometry
+        geomtime = self._create_geometry(domain)
 
         # Create 2D elastic wave PDE function (dimensionless form)
-        pde_func = PDEDefinition2DService.create_pde_function(
-            elastic_lambda=config.domain.elastic_lambda,
-            elastic_mu=config.domain.elastic_mu,
-            density=config.domain.density
+        # Note: DomainConfig in config_loader might not have elastic constants,
+        # but the notebook config dict does.
+        pde_service = PDEDefinition2DService(
+            elastic_lambda=self._get_attr(domain, "elastic_lambda"),
+            elastic_mu=self._get_attr(domain, "elastic_mu"),
+            density=self._get_attr(domain, "density")
         )
+        pde_func = pde_service.create_pde_function()
 
         # No explicit boundary/initial conditions (rely on FDTD data supervision)
-        # TimePDE with empty constraints list
         constraints = []
 
-        # Create TimePDE data object with collocation points
-        # num_domain: PDE collocation points (default 10000 per design)
-        # num_boundary/num_initial: 0 (no explicit BC/IC, rely on data)
+        # Get number of domain points
+        num_domain = self._get_attr(training, "num_domain", 10000)
+        if isinstance(training, dict):
+            num_domain = training.get("num_domain", 10000)
+        
+        # Create TimePDE data object
         data = dde.data.TimePDE(
             geomtime,
             pde_func,
             constraints,
-            num_domain=config.training.get("num_domain", 10000),
-            num_boundary=0,  # No explicit BC
-            num_initial=0    # No explicit IC
+            num_domain=num_domain,
+            num_boundary=0,
+            num_initial=0
         )
 
-        # Create neural network (5D input → 4D output)
-        net = self._create_network(
-            config.network.layer_sizes,
-            config.network.activation
-        )
+        # Create neural network
+        layer_sizes = self._get_attr(network, "layer_sizes")
+        activation = self._get_attr(network, "activation")
+        
+        net = self._create_network(layer_sizes, activation)
 
         # Create DeepXDE Model
         model = dde.Model(data, net)
 
         if compile_model:
             # Compile with optimizer and loss weights
-            # Loss weights: [pde]
-            pde_weight = config.training.loss_weights.get("pde", 1.0)
+            optimizer = self._get_attr(training, "optimizer", "adam")
+            lr = self._get_attr(training, "learning_rate")
+            loss_weights_config = self._get_attr(training, "loss_weights")
+            
+            pde_weight = 1.0
+            if isinstance(loss_weights_config, dict):
+                pde_weight = loss_weights_config.get("pde", 1.0)
+            else:
+                 # Assume it's an object/dict accessible
+                 pde_weight = getattr(loss_weights_config, "pde", 1.0) # Or handle dict access if it's a dict
 
+            # Ensure pde_weight is extracted correctly if loss_weights is just a dict
+            if isinstance(loss_weights_config, dict):
+                 pde_weight = loss_weights_config.get("pde", 1.0)
+            
             model.compile(
-                config.training.optimizer,
-                lr=config.training.learning_rate,
-                loss_weights=[pde_weight]  # Only PDE loss (no BC/IC)
+                optimizer,
+                lr=lr,
+                loss_weights=[pde_weight]
             )
 
         return model

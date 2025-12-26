@@ -23,11 +23,12 @@ class TestPDEDefinition2D:
         elastic_mu = 26e9      # Pa
         density = 2700.0       # kg/m³
 
-        pde_func = PDEDefinition2DService.create_pde_function(
+        pde_service = PDEDefinition2DService(
             elastic_lambda=elastic_lambda,
             elastic_mu=elastic_mu,
             density=density
         )
+        pde_func = pde_service.create_pde_function()
 
         assert callable(pde_func), "PDE function should be callable"
 
@@ -37,9 +38,12 @@ class TestPDEDefinition2D:
         elastic_mu = 26e9
         density = 2700.0
 
-        pde_func = PDEDefinition2DService.create_pde_function(
-            elastic_lambda, elastic_mu, density
+        pde_service = PDEDefinition2DService(
+            elastic_lambda=elastic_lambda,
+            elastic_mu=elastic_mu,
+            density=density
         )
+        pde_func = pde_service.create_pde_function()
 
         # Verify PDE function is callable (actual gradient computation tested in integration)
         assert callable(pde_func), "PDE function should be callable"
@@ -71,9 +75,12 @@ class TestPDEDefinition2D:
         elastic_mu = 26e9
         density = 2700.0
 
-        pde_func = PDEDefinition2DService.create_pde_function(
-            elastic_lambda, elastic_mu, density
+        pde_service = PDEDefinition2DService(
+            elastic_lambda=elastic_lambda,
+            elastic_mu=elastic_mu,
+            density=density
         )
+        pde_func = pde_service.create_pde_function()
 
         # Verify PDE function is created successfully
         assert callable(pde_func), "PDE function should be callable"
@@ -84,9 +91,12 @@ class TestPDEDefinition2D:
         elastic_mu = 26e9
         density = 2700.0
 
-        pde_func = PDEDefinition2DService.create_pde_function(
-            elastic_lambda, elastic_mu, density
+        pde_service = PDEDefinition2DService(
+            elastic_lambda=elastic_lambda,
+            elastic_mu=elastic_mu,
+            density=density
         )
+        pde_func = pde_service.create_pde_function()
 
         # Use simple polynomial for testing Hessian computation
         # Ux = x² + y² + t² (dimensionless coords)

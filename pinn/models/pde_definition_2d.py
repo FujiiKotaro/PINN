@@ -17,12 +17,27 @@ import torch
 class PDEDefinition2DService:
     """Service for defining 2D elastic wave PDE residuals."""
 
-    @staticmethod
-    def create_pde_function(
+    def __init__(
+        self,
         elastic_lambda: float,
         elastic_mu: float,
-        density: float
-    ) -> Callable:
+        density: float,
+        scales: object = None
+    ):
+        """Initialize PDE definition service.
+
+        Args:
+            elastic_lambda: Lamé's first parameter (Pa)
+            elastic_mu: Shear modulus (Pa)
+            density: Material density (kg/m³)
+            scales: Optional scaling parameters (DimensionlessScalerService or similar)
+        """
+        self.elastic_lambda = elastic_lambda
+        self.elastic_mu = elastic_mu
+        self.density = density
+        self.scales = scales
+
+    def create_pde_function(self) -> Callable:
         """Create 2D elastic wave PDE function for DeepXDE (dimensionless form).
 
         The dimensionless 2D elastic wave equations are:
@@ -35,11 +50,6 @@ class PDEDefinition2DService:
 
         Stress residuals:
             Simplified to zero (rely on FDTD data supervision)
-
-        Args:
-            elastic_lambda: Lamé's first parameter (Pa)
-            elastic_mu: Shear modulus (Pa)
-            density: Material density (kg/m³)
 
         Returns:
             PDE function with signature (x, y) -> residual where:
@@ -59,17 +69,18 @@ class PDEDefinition2DService:
             - PDE residual = 0 at true solution (physics constraint)
 
         Example:
-            >>> pde_fn = PDEDefinition2DService.create_pde_function(
+            >>> pde_service = PDEDefinition2DService(
             ...     elastic_lambda=58e9,
             ...     elastic_mu=26e9,
             ...     density=2700.0
             ... )
+            >>> pde_fn = pde_service.create_pde_function()
             >>> # Use with DeepXDE's TimePDE data object
             >>> data = dde.data.TimePDE(geomtime, pde_fn, [], num_domain=10000)
         """
         # Compute wave speeds
-        c_l = np.sqrt((elastic_lambda + 2*elastic_mu) / density)  # Longitudinal wave speed
-        c_t = np.sqrt(elastic_mu / density)  # Transverse wave speed
+        c_l = np.sqrt((self.elastic_lambda + 2*self.elastic_mu) / self.density)  # Longitudinal wave speed
+        c_t = np.sqrt(self.elastic_mu / self.density)  # Transverse wave speed
 
         # Dimensionless wave speed ratio
         c_ratio = c_t / c_l  # ≈ 0.49 for Aluminum 6061

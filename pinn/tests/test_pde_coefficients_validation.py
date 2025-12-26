@@ -147,11 +147,12 @@ class TestPDECoefficientsValidation:
         density = 2700.0
 
         # Create PDE function
-        pde_func = PDEDefinition2DService.create_pde_function(
+        pde_service = PDEDefinition2DService(
             elastic_lambda=elastic_lambda,
             elastic_mu=elastic_mu,
             density=density
         )
+        pde_func = pde_service.create_pde_function()
 
         # Verify PDE function is callable
         assert callable(pde_func), "PDE function should be callable"
