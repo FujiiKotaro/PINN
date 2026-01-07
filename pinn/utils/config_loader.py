@@ -60,7 +60,23 @@ class NetworkConfig(BaseModel):
         [2, 50, 50, 50, 1],
         description="Neural network architecture"
     )
-    activation: Literal["tanh", "relu", "sigmoid"] = "tanh"
+    activation: Literal["tanh", "relu", "sigmoid", "gelu"] = "tanh"
+
+    # Fourier Feature Network settings
+    use_fourier_features: bool = Field(
+        False,
+        description="Use Fourier Feature Embedding for improved high-frequency learning"
+    )
+    num_fourier_features: int = Field(
+        256,
+        gt=0,
+        description="Number of Fourier features (output dim = 2 * num_fourier_features)"
+    )
+    fourier_scale: float = Field(
+        10.0,
+        gt=0,
+        description="Scale parameter for Fourier feature frequency distribution"
+    )
 
     @field_validator("layer_sizes")
     @classmethod
@@ -78,10 +94,37 @@ class TrainingConfig(BaseModel):
     learning_rate: float = Field(1e-3, gt=0)
     optimizer: Literal["adam", "lbfgs"] = "adam"
     loss_weights: dict[str, float] = Field(
-        {"data": 1.0, "pde": 1.0, "bc": 1.0}
+        {"data": 1.0, "pde": 1.0, "bc": 1.0, "ic": 1.0}
     )
     amp_enabled: bool = True
     checkpoint_interval: int = 100
+
+    # Causal Training settings
+    use_causal_training: bool = Field(
+        False,
+        description="Use causal (time-dependent) weighting for PDE loss"
+    )
+    causal_beta: float = Field(
+        1.0,
+        ge=0,
+        description="Causal decay parameter (0=no causal, higher=stronger early-time emphasis)"
+    )
+
+    def get_bc_weight(self) -> float:
+        """Get boundary condition loss weight."""
+        return self.loss_weights.get("bc", 1.0)
+
+    def get_ic_displacement_weight(self) -> float:
+        """Get initial condition displacement loss weight."""
+        return self.loss_weights.get("ic_displacement", self.loss_weights.get("ic", 1.0))
+
+    def get_ic_velocity_weight(self) -> float:
+        """Get initial condition velocity loss weight."""
+        return self.loss_weights.get("ic_velocity", self.loss_weights.get("ic", 1.0))
+
+    def get_pde_weight(self) -> float:
+        """Get PDE residual loss weight."""
+        return self.loss_weights.get("pde", 1.0)
 
 
 class AnalyticalSolutionConfig(BaseModel):

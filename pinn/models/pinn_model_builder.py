@@ -8,9 +8,12 @@ neural network architecture.
 from collections.abc import Callable
 
 import deepxde as dde
+import torch
 
 from pinn.models.boundary_conditions import BoundaryConditionsService
 from pinn.models.pde_definition import PDEDefinitionService
+from pinn.models.causal_pde_definition import CausalPDEDefinitionService
+from pinn.models.fourier_network import FourierFeatureNetwork
 from pinn.utils.config_loader import DomainConfig, ExperimentConfig, NetworkConfig
 
 
@@ -37,20 +40,43 @@ class PINNModelBuilderService:
 
         return geomtime
 
-    def _create_network(self, network_config: NetworkConfig) -> dde.nn.FNN:
-        """Create feedforward neural network with specified architecture.
+    def _create_network(self, network_config: NetworkConfig):
+        """Create neural network with specified architecture.
+
+        Supports both standard FNN and Fourier Feature Network based on config.
 
         Args:
             network_config: Network configuration with layer sizes and activation
 
         Returns:
-            DeepXDE FNN (feedforward neural network)
+            Neural network (DeepXDE FNN or Fourier Feature Network)
         """
-        return dde.nn.FNN(
-            network_config.layer_sizes,
-            network_config.activation,
-            "Glorot normal"  # Weight initialization
-        )
+        if network_config.use_fourier_features:
+            # Use Fourier Feature Network for improved high-frequency learning
+            # Extract hidden layer sizes (exclude input and output dimensions)
+            hidden_layers = network_config.layer_sizes[1:-1]
+
+            net = FourierFeatureNetwork(
+                input_dim=network_config.layer_sizes[0],
+                output_dim=network_config.layer_sizes[-1],
+                hidden_layers=hidden_layers,
+                num_fourier_features=network_config.num_fourier_features,
+                fourier_scale=network_config.fourier_scale,
+                activation=network_config.activation
+            )
+
+            # Move to GPU if available
+            if torch.cuda.is_available():
+                net = net.cuda()
+
+            return net
+        else:
+            # Standard feedforward network
+            return dde.nn.FNN(
+                network_config.layer_sizes,
+                network_config.activation,
+                "Glorot normal"  # Weight initialization
+            )
 
     def build_model(
         self,
@@ -78,9 +104,20 @@ class PINNModelBuilderService:
         geomtime = self._create_geometry(config.domain)
 
         # Create PDE function with configured wave speed
-        pde_func = PDEDefinitionService.create_pde_function(
-            config.domain.wave_speed
-        )
+        # Use causal PDE if enabled in training config
+        if config.training.use_causal_training:
+            # Use adaptive causal PDE with time normalization
+            pde_func = CausalPDEDefinitionService.create_adaptive_causal_pde_function(
+                c=config.domain.wave_speed,
+                t_max=config.domain.t_max,
+                beta=config.training.causal_beta
+            )
+            print(f"Using Causal PDE with β={config.training.causal_beta}")
+        else:
+            # Standard PDE without causal weighting
+            pde_func = PDEDefinitionService.create_pde_function(
+                config.domain.wave_speed
+            )
 
         # Create boundary conditions based on configuration
         if config.boundary_conditions.type == "dirichlet":
@@ -117,7 +154,7 @@ class PINNModelBuilderService:
         # For Neumann BC, increase collocation points for better convergence
         num_domain = 5000 if config.boundary_conditions.type == "neumann" else 2540
         num_boundary = 160 if config.boundary_conditions.type == "neumann" else 80
-        num_initial = 320 if config.boundary_conditions.type == "neumann" else 160
+        num_initial = 500 if config.boundary_conditions.type == "neumann" else 160
 
         data = dde.data.TimePDE(
             geomtime,
@@ -137,18 +174,19 @@ class PINNModelBuilderService:
         if compile_model:
             # Compile with optimizer and loss weights
             # Order: [bc, ic_displacement, ic_velocity, pde]
-            bc_weight = config.training.loss_weights.get("bc", 1.0)
-            ic_weight = config.training.loss_weights.get("ic", 1.0)
-            pde_weight = config.training.loss_weights.get("pde", 1.0)
+            bc_weight = config.training.get_bc_weight()
+            ic_displacement_weight = config.training.get_ic_displacement_weight()
+            ic_velocity_weight = config.training.get_ic_velocity_weight()
+            pde_weight = config.training.get_pde_weight()
 
             model.compile(
                 config.training.optimizer,
                 lr=config.training.learning_rate,
                 loss_weights=[
-                    bc_weight,          # Boundary condition
-                    ic_weight,          # Initial displacement
-                    ic_weight,          # Initial velocity
-                    pde_weight          # PDE residual
+                    bc_weight,              # Boundary condition
+                    ic_displacement_weight, # Initial displacement
+                    ic_velocity_weight,     # Initial velocity
+                    pde_weight              # PDE residual
                 ]
             )
 

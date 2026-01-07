@@ -35,35 +35,46 @@ boundary_conditions:
 
 # Neural network architecture
 network:
-  # Larger network for capturing traveling wave dynamics
-  layer_sizes: [2, 64, 64, 64, 1]
+  # Larger network for capturing traveling wave dynamics (Phase 2 expansion)
+  layer_sizes: [2, 128, 128, 128, 128, 1]
 
   # Activation function
   activation: "tanh"
 
+  # Fourier Feature Network for improved high-frequency learning
+  use_fourier_features: true
+  num_fourier_features: 128  # Reduced for stability
+  fourier_scale: 1.0  # CRITICAL: Lower scale for stable initialization
+
 # Training hyperparameters
 training:
-  # More epochs for traveling wave convergence
-  epochs: 15000
+  # More epochs for traveling wave convergence (Phase 2: increased for larger network)
+  epochs: 10000
 
-  # Learning rate for optimizer
-  learning_rate: 0.0008
+  # Learning rate for optimizer (increased for Fourier Features)
+  learning_rate: 0.001  
 
   # Optimizer: "adam" or "lbfgs"
   optimizer: "adam"
 
-  # Loss function weights
+  # Loss function weights (Phase 2: Individual IC weights)
   # Emphasize PDE residual for traveling wave physics
   loss_weights:
-    data: 0.5   # Lower data weight if using analytical solution
-    pde: 2.0    # Higher PDE weight for physics enforcement
-    bc: 5.0     # Moderate BC weight for Neumann conditions
+    data: 0.5              # Lower data weight if using analytical solution
+    pde: 10.0              # Higher PDE weight for physics enforcement
+    bc: 20.0               # INCREASED: Strong BC weight for proper reflection (1.0 → 20.0)
+    ic_displacement: 100.0 # Initial displacement (Gaussian pulse shape)
+    ic_velocity: 100.0     # Initial velocity (zero velocity condition)
 
   # Enable automatic mixed precision for GPU memory efficiency
   amp_enabled: true
 
   # Checkpoint save interval (epochs)
   checkpoint_interval: 1000
+
+  # Causal Training for improved temporal causality
+  use_causal_training: true
+  causal_beta: 0.5  # Gentle causal weighting (reduced from 2.0)
 
 # Analytical solution configuration
 analytical_solution:

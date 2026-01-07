@@ -8,7 +8,7 @@ import numpy as np
 
 
 class LossLoggingCallback:
-    """Log individual loss components (L_data, L_pde, L_bc) during training."""
+    """Log individual loss components (L_bc, L_ic_displacement, L_ic_velocity, L_pde) during training."""
 
     def __init__(self, log_interval: int = 100):
         """Initialize loss logging callback.
@@ -18,9 +18,10 @@ class LossLoggingCallback:
         """
         self.log_interval = log_interval
         self.history = {
-            "L_data": [],
-            "L_pde": [],
             "L_bc": [],
+            "L_ic_displacement": [],
+            "L_ic_velocity": [],
+            "L_pde": [],
             "total_loss": []
         }
         self.model = None
@@ -53,14 +54,17 @@ class LossLoggingCallback:
         """Callback executed at the end of each epoch.
 
         Logs loss components if current epoch is a multiple of log_interval.
+        Loss order: [bc, ic_displacement, ic_velocity, pde]
         """
         if self.model.train_state.epoch % self.log_interval == 0:
             # Extract loss components from DeepXDE model state
+            # Order: [bc, ic_displacement, ic_velocity, pde]
             losses = self.model.train_state.loss_train
 
-            self.history["L_data"].append(float(losses[0]))
-            self.history["L_pde"].append(float(losses[1]))
-            self.history["L_bc"].append(float(losses[2]))
+            self.history["L_bc"].append(float(losses[0]))
+            self.history["L_ic_displacement"].append(float(losses[1]))
+            self.history["L_ic_velocity"].append(float(losses[2]))
+            self.history["L_pde"].append(float(losses[3]))
             self.history["total_loss"].append(float(np.sum(losses)))
 
     def on_train_end(self) -> None:
@@ -262,17 +266,19 @@ class ValidationCallback:
                     n=self.n_mode
                 ).reshape(-1, 1)
             elif self.bc_type == "traveling_wave":
-                # For traveling wave, compute analytical solution manually
+                # For traveling wave, compute analytical solution with reflections
                 x_vals = self.test_points[:, 0]
                 t_vals = self.test_points[:, 1]
-                # Use traveling_wave method which requires meshgrid
+                # Use traveling_wave_with_reflections method which requires meshgrid
                 x_unique = np.unique(x_vals)
                 t_unique = np.unique(t_vals)
-                u_analytical_grid = self.analytical_solver.traveling_wave(
+                u_analytical_grid = self.analytical_solver.traveling_wave_with_reflections(
                     x=x_unique,
                     t=t_unique,
                     c=self.wave_speed,
-                    initial_condition=self.initial_condition_func
+                    initial_condition=self.initial_condition_func,
+                    L=L,
+                    n_reflections=10
                 )
                 # Flatten to match test_points order
                 u_exact = u_analytical_grid.T.flatten().reshape(-1, 1)
@@ -386,6 +392,117 @@ class DivergenceDetectionCallback:
     def on_train_end(self) -> None:
         """Callback executed at the end of training."""
         pass
+
+
+class EarlyStoppingCallback:
+    """Early stopping based on validation error or total loss."""
+
+    def __init__(
+        self,
+        patience: int = 10,
+        min_delta: float = 1e-5,
+        monitor: str = "loss",
+        restore_best_weights: bool = True,
+        output_dir: Path = None
+    ):
+        """Initialize early stopping callback.
+
+        Args:
+            patience: Number of epochs with no improvement before stopping
+            min_delta: Minimum change to qualify as an improvement
+            monitor: Metric to monitor ("loss" or "val_error")
+            restore_best_weights: Whether to restore weights from best epoch
+            output_dir: Directory to save best model checkpoint
+        """
+        self.patience = patience
+        self.min_delta = min_delta
+        self.monitor = monitor
+        self.restore_best_weights = restore_best_weights
+        self.output_dir = output_dir
+
+        self.best_value = float('inf')
+        self.best_epoch = 0
+        self.wait = 0
+        self.stopped_epoch = 0
+        self.model = None
+        self.best_weights_path = None
+
+    def set_model(self, model: Any) -> None:
+        """Set the model for this callback.
+
+        Args:
+            model: DeepXDE Model instance
+        """
+        self.model = model
+
+        if self.output_dir and self.restore_best_weights:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self.best_weights_path = self.output_dir / "best_model_early_stopping.pth"
+
+    def on_train_begin(self) -> None:
+        """Callback executed at the beginning of training."""
+        self.wait = 0
+        self.stopped_epoch = 0
+        self.best_value = float('inf')
+        self.best_epoch = 0
+
+    def on_epoch_begin(self) -> None:
+        """Callback executed at the beginning of each epoch."""
+        pass
+
+    def on_batch_begin(self) -> None:
+        """Callback executed at the beginning of each batch."""
+        pass
+
+    def on_batch_end(self) -> None:
+        """Callback executed at the end of each batch."""
+        pass
+
+    def on_epoch_end(self) -> None:
+        """Callback executed at the end of each epoch.
+
+        Monitors the specified metric and stops training if no improvement
+        is observed for 'patience' epochs.
+        """
+        epoch = self.model.train_state.epoch
+
+        # Get current metric value
+        if self.monitor == "loss":
+            current_value = float(np.sum(self.model.train_state.loss_train))
+        else:
+            # For validation error, we would need access to validation callback
+            # For now, use total loss as fallback
+            current_value = float(np.sum(self.model.train_state.loss_train))
+
+        # Check if improvement
+        if current_value < self.best_value - self.min_delta:
+            self.best_value = current_value
+            self.best_epoch = epoch
+            self.wait = 0
+
+            # Save best weights
+            if self.restore_best_weights and self.best_weights_path:
+                self.model.save(str(self.best_weights_path))
+
+        else:
+            self.wait += 1
+
+            if self.wait >= self.patience:
+                self.stopped_epoch = epoch
+                self.model.stop_training = True
+                print(f"\nEarly stopping triggered at epoch {epoch}")
+                print(f"Best epoch: {self.best_epoch} with {self.monitor} = {self.best_value:.6e}")
+
+                # Restore best weights
+                if self.restore_best_weights and self.best_weights_path and self.best_weights_path.exists():
+                    print(f"Restoring best weights from epoch {self.best_epoch}")
+                    self.model.restore(str(self.best_weights_path))
+
+    def on_train_end(self) -> None:
+        """Callback executed at the end of training."""
+        if self.stopped_epoch > 0:
+            print(f"\nTraining stopped early at epoch {self.stopped_epoch}")
+            print(f"Best epoch was {self.best_epoch} with {self.monitor} = {self.best_value:.6e}")
 
 
 class R2ValidationCallback:
