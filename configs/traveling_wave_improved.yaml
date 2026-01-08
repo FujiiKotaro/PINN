@@ -1,0 +1,58 @@
+# Improved Traveling Wave Configuration
+#
+# KEY IMPROVEMENT: Significantly increased ic_velocity weight to enforce
+# zero initial velocity condition, addressing the wave-splitting issue
+# identified by Gemini AI.
+#
+# PROBLEM: With zero initial velocity, d'Alembert solution splits the wave
+# into two half-amplitude waves. PINN struggles to learn this without strong
+# enforcement of the initial velocity condition.
+#
+# SOLUTION: Increase ic_velocity weight from 100.0 to 500.0
+
+experiment_name: "traveling_wave_improved"
+
+seed: 42
+
+domain:
+  x_min: 0.0
+  x_max: 2.0
+  t_min: 0.0
+  t_max: 2.0
+  wave_speed: 1.5
+
+boundary_conditions:
+  type: "neumann"
+  left_value: null
+  right_value: null
+
+network:
+  layer_sizes: [2, 128, 128, 128, 128, 1]
+  activation: "tanh"
+  use_fourier_features: true
+  num_fourier_features: 128
+  fourier_scale: 1.0
+
+training:
+  epochs: 10000
+  learning_rate: 0.001
+  optimizer: "adam"
+
+  # CRITICAL CHANGE: Significantly increased ic_velocity weight
+  loss_weights:
+    data: 0.5
+    pde: 10.0
+    bc: 20.0
+    ic_displacement: 100.0
+    ic_velocity: 500.0  # INCREASED from 100.0 to 500.0
+
+  amp_enabled: true
+  checkpoint_interval: 1000
+  use_causal_training: true
+  causal_beta: 0.5
+
+analytical_solution:
+  solution_type: "traveling_wave"
+  mode: 1
+  initial_amplitude: 1.0
+  enable_validation: false
